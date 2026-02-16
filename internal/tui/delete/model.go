@@ -230,7 +230,7 @@ func (m Model) viewResults() string {
 
 	b.WriteString("\n")
 	b.WriteString(fmt.Sprintf("  %d succeeded, %d failed\n\n", succeeded, failed))
-	b.WriteString(helpStyle.Render("enter/q: quit"))
+	b.WriteString(helpStyle.Render("enter: new search • q: quit"))
 	return b.String()
 }
 

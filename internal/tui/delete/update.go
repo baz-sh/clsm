@@ -237,8 +237,18 @@ func (m Model) updateResults(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch {
-		case key.Matches(msg, m.keys.Quit), key.Matches(msg, m.keys.Confirm):
+		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
+		case key.Matches(msg, m.keys.Confirm), key.Matches(msg, m.keys.Search):
+			m.phase = phaseSearch
+			m.input.SetValue("")
+			m.input.Focus()
+			m.items = nil
+			m.cursor = 0
+			m.offset = 0
+			m.results = nil
+			m.status = ""
+			return m, nil
 		}
 	}
 
