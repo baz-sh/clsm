@@ -50,9 +50,6 @@ func Search(term string) ([]Session, error) {
 			if strings.Contains(strings.ToLower(entry.Summary), lower) {
 				matchSource = "summary"
 				matchValue = entry.Summary
-			} else if strings.Contains(strings.ToLower(entry.FirstPrompt), lower) {
-				matchSource = "firstPrompt"
-				matchValue = entry.FirstPrompt
 			} else {
 				continue
 			}
