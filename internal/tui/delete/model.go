@@ -173,8 +173,9 @@ func (m Model) viewSelect() string {
 
 		b.WriteString(fmt.Sprintf("%s%s %s\n", prefix, check, style.Render(title)))
 
-		detail := fmt.Sprintf("     %s • %s • %d msgs",
-			item.session.ProjectPath, item.session.MatchSource, item.session.MsgCount)
+		matchPreview := truncate(item.session.MatchValue, 80)
+		detail := fmt.Sprintf("     %s • %d msgs • matched %s: %s",
+			item.session.ProjectPath, item.session.MsgCount, item.session.MatchSource, matchPreview)
 		b.WriteString(dimStyle.Render(detail))
 		b.WriteString("\n")
 	}
@@ -252,6 +253,13 @@ func (m Model) selectedSessions() []session.Session {
 		}
 	}
 	return sessions
+}
+
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max-1] + "…"
 }
 
 func displayTitle(s session.Session) string {
