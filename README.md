@@ -27,39 +27,29 @@ go build -o clsm .
 
 ## Usage
 
-### Interactive (TUI)
-
-Launch the home menu to choose a mode:
-
 ```sh
 clsm
 ```
 
-This opens an interactive menu where you can select **Projects**, **Sessions**, or **Search**.
+This opens an interactive menu with three options:
 
 - **Projects** — browse projects, drill into their sessions
 - **Sessions** — browse all sessions across all projects
 - **Search** — search sessions by summary or custom title
 
-### Browse
+From any session list you can navigate with `j`/`k`, rename with `r`, multi-select with `space`, and delete selected sessions with `d` (with confirmation).
 
-Browse all projects and drill into their sessions:
+Use `/` to filter at any level.
 
-```sh
-clsm browse
-```
+### CLI Delete
 
-Navigate the project list, press `enter`/`l` to open a project's sessions, use `/` to filter at any level, and `r` to rename a session. Use `space` to select sessions and `d` to delete them.
-
-### Delete (CLI)
-
-Delete sessions non-interactively from the command line:
+For scripting or quick one-off deletions:
 
 ```sh
 clsm delete "stow"
 ```
 
-This searches across session summaries and custom titles (case-insensitive), then prompts for confirmation before deleting.
+Searches across session summaries and custom titles (case-insensitive), shows matches, and prompts for confirmation before deleting.
 
 ## Key Bindings
 
@@ -71,20 +61,19 @@ Vim-style keybindings throughout.
 |---|---|
 | `j` / `k` | Navigate up/down |
 | `g` / `G` | Jump to top/bottom |
-| `ctrl+u` / `ctrl+d` | Half page up/down (browse) |
+| `ctrl+u` / `ctrl+d` | Half page up/down |
 | `enter` / `l` | Open / select |
-| `space` | Toggle selection (sessions) |
 | `esc` / `h` | Back |
-| `q` | Quit / back |
-| `/` | Filter / search |
+| `q` | Quit |
+| `/` | Filter |
 
 ### Sessions
 
 | Key | Action |
 |---|---|
-| `r` | Rename session |
 | `space` | Toggle selection |
 | `a` / `A` | Select all / deselect all |
+| `r` | Rename session |
 | `d` | Delete selected |
 | `y` / `n` | Confirm / cancel deletion |
 
