@@ -35,7 +35,11 @@ Launch the home menu to choose a mode:
 clsm
 ```
 
-This opens an interactive menu where you can select **Browse** or **Delete**.
+This opens an interactive menu where you can select **Projects**, **Sessions**, or **Search**.
+
+- **Projects** — browse projects, drill into their sessions
+- **Sessions** — browse all sessions across all projects
+- **Search** — search sessions by summary or custom title
 
 ### Browse
 
@@ -45,23 +49,17 @@ Browse all projects and drill into their sessions:
 clsm browse
 ```
 
-Navigate the project list, press `enter`/`l` to open a project's sessions, use `/` to filter at any level, and `r` to rename a session.
+Navigate the project list, press `enter`/`l` to open a project's sessions, use `/` to filter at any level, and `r` to rename a session. Use `space` to select sessions and `d` to delete them.
 
-### Delete
+### Delete (CLI)
 
-Search and delete sessions interactively:
-
-```sh
-clsm delete
-```
-
-Or pass a search term for non-interactive CLI mode:
+Delete sessions non-interactively from the command line:
 
 ```sh
 clsm delete "stow"
 ```
 
-This searches across session summaries, first prompts, and custom titles (case-insensitive), then prompts for confirmation before deleting.
+This searches across session summaries and custom titles (case-insensitive), then prompts for confirmation before deleting.
 
 ## Key Bindings
 
@@ -75,31 +73,27 @@ Vim-style keybindings throughout.
 | `g` / `G` | Jump to top/bottom |
 | `ctrl+u` / `ctrl+d` | Half page up/down (browse) |
 | `enter` / `l` | Open / select |
+| `space` | Toggle selection (sessions) |
 | `esc` / `h` | Back |
 | `q` | Quit / back |
-| `/` | Filter (browse) / search (delete) |
+| `/` | Filter / search |
 
-### Browse mode (sessions)
+### Sessions
 
 | Key | Action |
 |---|---|
 | `r` | Rename session |
-
-### Delete mode
-
-| Key | Action |
-|---|---|
 | `space` | Toggle selection |
 | `a` / `A` | Select all / deselect all |
-| `d` / `enter` | Delete selected |
+| `d` | Delete selected |
 | `y` / `n` | Confirm / cancel deletion |
 
 ## How It Works
 
 Sessions are found by scanning `~/.claude/projects/`:
 
-1. **Index files** (`sessions-index.json`) — matches against `summary` and `firstPrompt` fields
-2. **JSONL files** — scans for `custom-title` entries and matches against the `customTitle` field
+1. **Index files** (`sessions-index.json`) — reads session metadata (summary, message count, timestamps)
+2. **JSONL files** — scans for `custom-title` entries and enriches missing data (message counts, first prompts) directly from session files
 
 When deleting, `clsm` removes the `.jsonl` session file and removes the corresponding entry from the project's `sessions-index.json`.
 
@@ -119,18 +113,18 @@ clsm/
 │   ├── cmd/
 │   │   ├── root.go                  # Root command + home menu launcher
 │   │   ├── browse.go                # Browse subcommand
-│   │   └── delete.go                # Delete subcommand (CLI + TUI)
+│   │   └── delete.go                # Delete subcommand (CLI only)
 │   └── tui/
 │       ├── theme/
 │       │   └── theme.go             # Adaptive color theme (light/dark)
 │       ├── home/
-│       │   └── model.go             # Home menu (mode picker)
+│       │   └── model.go             # Home menu (Projects/Sessions/Search)
 │       ├── browse/
-│       │   ├── model.go             # Browse TUI (projects + sessions)
-│       │   ├── update.go            # Navigation, filtering, rename
+│       │   ├── model.go             # Browse TUI (projects, sessions, search, delete)
+│       │   ├── update.go            # Navigation, filtering, rename, multi-select, delete
 │       │   └── keys.go              # Key bindings
 │       └── delete/
-│           ├── model.go             # Delete TUI with progress bar
+│           ├── model.go             # Delete TUI (unused, kept for reference)
 │           ├── update.go            # Search, select, confirm, delete flow
 │           └── keys.go              # Key bindings
 ```
