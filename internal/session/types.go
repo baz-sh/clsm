@@ -59,4 +59,5 @@ type Project struct {
 	Path         string // original project path (e.g. "/Users/barryhall/Dev/code")
 	SessionCount int
 	LastModified string // most recent session modified date
+	LastPrompt   string // summary or first prompt from the most recent session
 }

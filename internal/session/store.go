@@ -329,13 +329,18 @@ func ListProjectsWithProgress(progress chan<- LoadProgress) ([]Project, error) {
 		if data, err := os.ReadFile(idxPath); err == nil {
 			var idx IndexFile
 			if err := json.Unmarshal(data, &idx); err == nil && len(idx.Entries) > 0 {
-				var projectPath, lastModified string
+				var projectPath, lastModified, lastPrompt string
 				for _, e := range idx.Entries {
 					if projectPath == "" && e.ProjectPath != "" {
 						projectPath = e.ProjectPath
 					}
 					if e.Modified > lastModified {
 						lastModified = e.Modified
+						if e.Summary != "" {
+							lastPrompt = e.Summary
+						} else if e.FirstPrompt != "" {
+							lastPrompt = e.FirstPrompt
+						}
 					}
 				}
 				if projectPath == "" {
@@ -346,6 +351,7 @@ func ListProjectsWithProgress(progress chan<- LoadProgress) ([]Project, error) {
 					Path:         projectPath,
 					SessionCount: len(idx.Entries),
 					LastModified: lastModified,
+					LastPrompt:   lastPrompt,
 				})
 				continue
 			}
@@ -368,11 +374,30 @@ func ListProjectsWithProgress(progress chan<- LoadProgress) ([]Project, error) {
 			}
 		}
 
+		// Try to find a first prompt, starting from the newest file.
+		var lastPrompt string
+		// Sort by mod time descending so we check newest first.
+		sort.Slice(jsonlFiles, func(a, b int) bool {
+			ai, _ := os.Stat(jsonlFiles[a])
+			bi, _ := os.Stat(jsonlFiles[b])
+			if ai == nil || bi == nil {
+				return false
+			}
+			return ai.ModTime().After(bi.ModTime())
+		})
+		for _, jpath := range jsonlFiles {
+			if p := extractFirstPrompt(jpath); p != "" {
+				lastPrompt = p
+				break
+			}
+		}
+
 		projects = append(projects, Project{
 			DirName:      dirName,
 			Path:         decodeDirName(dirName),
 			SessionCount: len(jsonlFiles),
 			LastModified: lastModified.Format(time.RFC3339),
+			LastPrompt:   lastPrompt,
 		})
 	}
 
@@ -467,6 +492,39 @@ func ListSessions(projectDir string) ([]Session, error) {
 	})
 
 	return sessions, nil
+}
+
+// extractFirstPrompt reads a JSONL session file and returns the content of
+// the first user message. Returns empty string if none found.
+func extractFirstPrompt(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.Contains(line, `"type":"user"`) {
+			continue
+		}
+		var entry struct {
+			Type    string `json:"type"`
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		}
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			continue
+		}
+		if entry.Type == "user" && entry.Message.Content != "" {
+			return entry.Message.Content
+		}
+	}
+	return ""
 }
 
 // decodeDirName converts an encoded project directory name back to a path.

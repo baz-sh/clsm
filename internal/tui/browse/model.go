@@ -166,7 +166,11 @@ func (m Model) viewProjects() string {
 		b.WriteString(fmt.Sprintf("%s%s %s\n", prefix, style.Render(path), count))
 
 		mod := formatTime(p.LastModified)
-		b.WriteString(fmt.Sprintf("    %s\n", theme.Dim.Render("last modified: "+mod)))
+		detail := "last modified: " + mod
+		if p.LastPrompt != "" {
+			detail += " • " + truncate(p.LastPrompt, m.width-len(mod)-22)
+		}
+		b.WriteString(fmt.Sprintf("    %s\n", theme.Dim.Render(detail)))
 	}
 
 	if len(items) == 0 {
