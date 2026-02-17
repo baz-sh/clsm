@@ -85,6 +85,7 @@ func (m Model) updateSearch(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.phase = phaseLoading
 			m.status = ""
+			m.searchTerm = term
 			return m, tea.Batch(m.spinner.Tick, searchCmd(term))
 		}
 	}
@@ -248,6 +249,7 @@ func (m Model) updateResults(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.offset = 0
 			m.results = nil
 			m.status = ""
+			m.searchTerm = ""
 			return m, nil
 		}
 	}

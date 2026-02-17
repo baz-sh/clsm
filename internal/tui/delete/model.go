@@ -32,17 +32,18 @@ type sessionItem struct {
 
 // Model is the Bubble Tea model for the delete TUI.
 type Model struct {
-	phase    phase
-	input    textinput.Model
-	spinner  spinner.Model
-	keys     keyMap
-	items    []sessionItem
-	cursor   int
-	offset   int // scroll offset
-	results  []session.DeleteResult
-	status   string // status message shown in search phase
-	width    int
-	height   int
+	phase      phase
+	input      textinput.Model
+	spinner    spinner.Model
+	keys       keyMap
+	items      []sessionItem
+	cursor     int
+	offset     int // scroll offset
+	results    []session.DeleteResult
+	status     string // status message shown in search phase
+	searchTerm string // the term used for the current search
+	width      int
+	height     int
 }
 
 // Styles
@@ -171,11 +172,13 @@ func (m Model) viewSelect() string {
 			style = selectedStyle
 		}
 
-		b.WriteString(fmt.Sprintf("%s%s %s\n", prefix, check, style.Render(title)))
+		highlightedTitle := highlightMatch(title, m.searchTerm)
+		b.WriteString(fmt.Sprintf("%s%s %s\n", prefix, check, style.Render(highlightedTitle)))
 
 		matchPreview := truncate(item.session.MatchValue, 80)
+		highlightedMatch := highlightMatch(matchPreview, m.searchTerm)
 		detail := fmt.Sprintf("     %s • %d msgs • matched %s: %s",
-			item.session.ProjectPath, item.session.MsgCount, item.session.MatchSource, matchPreview)
+			item.session.ProjectPath, item.session.MsgCount, item.session.MatchSource, highlightedMatch)
 		b.WriteString(dimStyle.Render(detail))
 		b.WriteString("\n")
 	}
@@ -253,6 +256,24 @@ func (m Model) selectedSessions() []session.Session {
 		}
 	}
 	return sessions
+}
+
+// highlightMatch returns the string with the matched substring rendered bold.
+func highlightMatch(s, term string) string {
+	if term == "" {
+		return s
+	}
+	lower := strings.ToLower(s)
+	lowerTerm := strings.ToLower(term)
+	idx := strings.Index(lower, lowerTerm)
+	if idx < 0 {
+		return s
+	}
+	bold := lipgloss.NewStyle().Bold(true)
+	before := s[:idx]
+	match := s[idx : idx+len(term)]
+	after := s[idx+len(term):]
+	return before + bold.Render(match) + after
 }
 
 func truncate(s string, max int) string {
