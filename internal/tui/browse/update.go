@@ -1,28 +1,61 @@
 package browse
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/baz-sh/clsm/internal/session"
 )
 
+// startLoadMsg is sent by Init to kick off project loading from Update,
+// where the model is returned and channel refs are preserved.
+type startLoadMsg struct{}
+
 // Messages for async operations.
-type projectsLoadedMsg []session.Project
+type projectsResultMsg struct {
+	projects []session.Project
+	err      error
+}
+type loadProgressMsg session.LoadProgress
 type sessionsLoadedMsg []session.Session
 type loadErrorMsg struct{ err error }
 type renameResultMsg struct{ err error }
 
-func loadProjectsCmd() tea.Cmd {
+// startLoadWithProgress launches the project loading goroutine and stores
+// the channels on the model. Returns the initial listener command.
+func startLoadWithProgress(m *Model) tea.Cmd {
+	progressCh := make(chan session.LoadProgress, 10)
+	resultCh := make(chan projectsResultMsg, 1)
+
+	go func() {
+		projects, err := session.ListProjectsWithProgress(progressCh)
+		resultCh <- projectsResultMsg{projects: projects, err: err}
+	}()
+
+	m.progressCh = progressCh
+	m.resultCh = resultCh
+
+	return listenForLoadUpdates(progressCh, resultCh)
+}
+
+// listenForLoadUpdates returns a tea.Cmd that waits for either a progress
+// update or the final load result.
+func listenForLoadUpdates(progressCh <-chan session.LoadProgress, resultCh <-chan projectsResultMsg) tea.Cmd {
 	return func() tea.Msg {
-		projects, err := session.ListProjects()
-		if err != nil {
-			return loadErrorMsg{err}
+		select {
+		case p, ok := <-progressCh:
+			if !ok {
+				return <-resultCh
+			}
+			return loadProgressMsg(p)
+		case r := <-resultCh:
+			return r
 		}
-		return projectsLoadedMsg(projects)
 	}
 }
 
@@ -41,11 +74,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.progress.Width = msg.Width - 10
+		if m.progress.Width > 60 {
+			m.progress.Width = 60
+		}
+		if m.progress.Width < 20 {
+			m.progress.Width = 20
+		}
 		return m, nil
 	case tea.KeyMsg:
 		if msg.Type == tea.KeyCtrlC {
 			return m, tea.Quit
 		}
+	case progress.FrameMsg:
+		progressModel, cmd := m.progress.Update(msg)
+		m.progress = progressModel.(progress.Model)
+		return m, cmd
 	}
 
 	switch m.phase {
@@ -66,20 +110,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) updateLoadingProjects(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case projectsLoadedMsg:
-		m.projects = make([]projectItem, len(msg))
-		for i, p := range msg {
+	case startLoadMsg:
+		cmd := startLoadWithProgress(&m)
+		return m, cmd
+
+	case loadProgressMsg:
+		m.progressPct = msg.Percent
+		m.progressInfo = fmt.Sprintf("Scanning projects %d/%d...", msg.Current, msg.Total)
+		progCmd := m.progress.SetPercent(msg.Percent)
+		listenCmd := listenForLoadUpdates(m.progressCh, m.resultCh)
+		return m, tea.Batch(progCmd, listenCmd)
+
+	case projectsResultMsg:
+		if msg.err != nil {
+			m.status = "Error: " + msg.err.Error()
+			m.phase = phaseProjects
+			return m, nil
+		}
+		m.projects = make([]projectItem, len(msg.projects))
+		for i, p := range msg.projects {
 			m.projects[i] = projectItem{project: p}
 		}
 		m.filteredProjs = allIndices(len(m.projects))
 		m.projCursor = 0
-		m.projOffset = 0
-		m.phase = phaseProjects
-		return m, nil
-
-	case loadErrorMsg:
-		m.status = "Error: " + msg.err.Error()
-		m.phase = phaseProjects
+				m.phase = phaseProjects
 		return m, nil
 
 	case spinner.TickMsg:
@@ -118,12 +172,12 @@ func (m Model) updateProjects(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.projCursor = len(m.filteredProjs) - 1
 			}
 		case key.Matches(msg, m.keys.HalfUp):
-			m.projCursor -= m.visibleHeight() / 4
+			m.projCursor -= pageSize / 2
 			if m.projCursor < 0 {
 				m.projCursor = 0
 			}
 		case key.Matches(msg, m.keys.HalfDn):
-			m.projCursor += m.visibleHeight() / 4
+			m.projCursor += pageSize / 2
 			if m.projCursor >= len(m.filteredProjs) {
 				m.projCursor = len(m.filteredProjs) - 1
 			}
@@ -160,8 +214,7 @@ func (m Model) updateLoadingSessions(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.filteredSess = allIndices(len(m.sessions))
 		m.sessCursor = 0
-		m.sessOffset = 0
-		m.phase = phaseSessions
+				m.phase = phaseSessions
 		return m, nil
 
 	case loadErrorMsg:
@@ -191,8 +244,7 @@ func (m Model) updateSessions(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sessions = nil
 			m.filteredSess = nil
 			m.sessCursor = 0
-			m.sessOffset = 0
-			m.filtering = false
+						m.filtering = false
 			m.filter.SetValue("")
 			return m, nil
 		case key.Matches(msg, m.keys.Up):
@@ -210,12 +262,12 @@ func (m Model) updateSessions(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.sessCursor = len(m.filteredSess) - 1
 			}
 		case key.Matches(msg, m.keys.HalfUp):
-			m.sessCursor -= m.visibleHeight() / 6
+			m.sessCursor -= pageSize / 2
 			if m.sessCursor < 0 {
 				m.sessCursor = 0
 			}
 		case key.Matches(msg, m.keys.HalfDn):
-			m.sessCursor += m.visibleHeight() / 6
+			m.sessCursor += pageSize / 2
 			if m.sessCursor >= len(m.filteredSess) {
 				m.sessCursor = len(m.filteredSess) - 1
 			}

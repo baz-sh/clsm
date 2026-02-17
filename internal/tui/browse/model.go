@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -39,19 +40,22 @@ type Model struct {
 	phase    phase
 	keys     keyMap
 	spinner  spinner.Model
+	progress progress.Model
+	progressPct  float64
+	progressInfo string
+	progressCh   <-chan session.LoadProgress
+	resultCh     <-chan projectsResultMsg
 	filter   textinput.Model
 	filtering bool
 
 	projects       []projectItem
 	filteredProjs  []int // indices into projects
 	projCursor     int
-	projOffset     int
 
 	selectedProject session.Project
 	sessions       []sessionItem
 	filteredSess   []int // indices into sessions
 	sessCursor     int
-	sessOffset     int
 
 	renameInput  textinput.Model
 	renameIdx    int // index into sessions being renamed
@@ -77,10 +81,16 @@ func New() Model {
 	ri.CharLimit = 256
 	ri.Width = 50
 
+	prog := progress.New(
+		progress.WithScaledGradient("#6C50A3", "#57CC99"),
+		progress.WithWidth(40),
+	)
+
 	return Model{
 		phase:       phaseLoadingProjects,
 		keys:        newKeyMap(),
 		spinner:     sp,
+		progress:    prog,
 		filter:      fi,
 		renameInput: ri,
 		width:       80,
@@ -89,13 +99,24 @@ func New() Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, loadProjectsCmd())
+	return func() tea.Msg { return startLoadMsg{} }
 }
 
 func (m Model) View() string {
 	switch m.phase {
 	case phaseLoadingProjects:
-		return fmt.Sprintf("%s Loading projects...\n", m.spinner.View())
+		var b strings.Builder
+		b.WriteString(theme.Title.Render("clsm — Browse Projects"))
+		b.WriteString("\n\n")
+		b.WriteString(m.progress.ViewAs(m.progressPct))
+		b.WriteString("\n\n")
+		if m.progressInfo != "" {
+			b.WriteString(theme.Dim.Render(m.progressInfo))
+		} else {
+			b.WriteString(theme.Dim.Render("Loading projects..."))
+		}
+		b.WriteString("\n")
+		return b.String()
 	case phaseProjects:
 		return m.viewProjects()
 	case phaseLoadingSessions:
@@ -108,6 +129,8 @@ func (m Model) View() string {
 	return ""
 }
 
+const pageSize = 15
+
 func (m Model) viewProjects() string {
 	var b strings.Builder
 	b.WriteString(theme.Title.Render("clsm — Browse Projects"))
@@ -118,30 +141,17 @@ func (m Model) viewProjects() string {
 		b.WriteString("\n\n")
 	}
 
-	visible := m.visibleHeight()
-	itemsPerPage := visible / 2
-	if itemsPerPage < 1 {
-		itemsPerPage = 1
-	}
-
 	items := m.filteredProjs
 	cursor := m.projCursor
-	offset := m.projOffset
 
-	if cursor < offset {
-		offset = cursor
-	}
-	if cursor >= offset+itemsPerPage {
-		offset = cursor - itemsPerPage + 1
-	}
-	m.projOffset = offset
-
-	end := offset + itemsPerPage
+	page := cursor / pageSize
+	start := page * pageSize
+	end := start + pageSize
 	if end > len(items) {
 		end = len(items)
 	}
 
-	for vi := offset; vi < end; vi++ {
+	for vi := start; vi < end; vi++ {
 		p := m.projects[items[vi]].project
 		path := shortenPath(p.Path)
 
@@ -169,7 +179,11 @@ func (m Model) viewProjects() string {
 		b.WriteString(theme.Dim.Render(m.status))
 		b.WriteString("\n")
 	}
-	b.WriteString(fmt.Sprintf(" %d projects", len(items)))
+	totalPages := (len(items) + pageSize - 1) / pageSize
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	b.WriteString(fmt.Sprintf(" %d projects • Page %d/%d", len(items), page+1, totalPages))
 	b.WriteString("\n")
 	if m.filtering {
 		b.WriteString(theme.Help.Render("enter: apply filter • esc: clear filter"))
@@ -192,30 +206,17 @@ func (m Model) viewSessions() string {
 		b.WriteString("\n\n")
 	}
 
-	visible := m.visibleHeight()
-	itemsPerPage := visible / 3
-	if itemsPerPage < 1 {
-		itemsPerPage = 1
-	}
-
 	items := m.filteredSess
 	cursor := m.sessCursor
-	offset := m.sessOffset
 
-	if cursor < offset {
-		offset = cursor
-	}
-	if cursor >= offset+itemsPerPage {
-		offset = cursor - itemsPerPage + 1
-	}
-	m.sessOffset = offset
-
-	end := offset + itemsPerPage
+	page := cursor / pageSize
+	start := page * pageSize
+	end := start + pageSize
 	if end > len(items) {
 		end = len(items)
 	}
 
-	for vi := offset; vi < end; vi++ {
+	for vi := start; vi < end; vi++ {
 		s := m.sessions[items[vi]].session
 		title := displayTitle(s)
 
@@ -248,7 +249,11 @@ func (m Model) viewSessions() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf(" %d sessions", len(items)))
+	totalPages := (len(items) + pageSize - 1) / pageSize
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	b.WriteString(fmt.Sprintf(" %d sessions • Page %d/%d", len(items), page+1, totalPages))
 	b.WriteString("\n")
 	if m.filtering {
 		b.WriteString(theme.Help.Render("enter: apply filter • esc: clear filter"))
@@ -276,17 +281,6 @@ func (m Model) viewRename() string {
 	}
 	b.WriteString(theme.Help.Render("enter: save • esc: cancel"))
 	return b.String()
-}
-
-func (m Model) visibleHeight() int {
-	h := m.height - 8
-	if m.filtering {
-		h -= 2
-	}
-	if h < 3 {
-		h = 3
-	}
-	return h
 }
 
 // WantsBackToHome returns true if the user quit to return to the home menu.

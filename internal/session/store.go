@@ -25,6 +25,13 @@ type SearchProgress struct {
 	Percent float64 // 0.0 to 1.0
 }
 
+// LoadProgress reports the current state of a project loading operation.
+type LoadProgress struct {
+	Current int
+	Total   int
+	Percent float64
+}
+
 // Search finds sessions matching the given term across all projects.
 // It searches summary, firstPrompt (from index files) and customTitle
 // (from JSONL files). Case-insensitive substring matching.
@@ -277,51 +284,95 @@ func Rename(s Session, newTitle string) error {
 // ListProjects returns all projects that contain sessions, sorted by most
 // recently modified session.
 func ListProjects() ([]Project, error) {
+	return ListProjectsWithProgress(nil)
+}
+
+// ListProjectsWithProgress is like ListProjects but sends progress updates to
+// the provided channel. The channel is closed when loading completes.
+// The channel may be nil to skip progress reporting.
+func ListProjectsWithProgress(progress chan<- LoadProgress) ([]Project, error) {
+	if progress != nil {
+		defer close(progress)
+	}
 	base := ClaudeDir()
-	indexes, err := filepath.Glob(filepath.Join(base, "*", "sessions-index.json"))
+
+	entries, err := os.ReadDir(base)
 	if err != nil {
-		return nil, fmt.Errorf("globbing index files: %w", err)
+		return nil, fmt.Errorf("reading projects dir: %w", err)
+	}
+
+	var dirs []os.DirEntry
+	for _, e := range entries {
+		if e.IsDir() {
+			dirs = append(dirs, e)
+		}
+	}
+
+	report := func(current, total int) {
+		if progress != nil {
+			progress <- LoadProgress{
+				Current: current,
+				Total:   total,
+				Percent: float64(current) / float64(total),
+			}
+		}
 	}
 
 	var projects []Project
-	for _, idxPath := range indexes {
-		data, err := os.ReadFile(idxPath)
-		if err != nil {
-			continue
-		}
+	for i, dir := range dirs {
+		report(i+1, len(dirs))
+		dirName := dir.Name()
+		dirPath := filepath.Join(base, dirName)
 
-		var idx IndexFile
-		if err := json.Unmarshal(data, &idx); err != nil {
-			continue
-		}
-
-		if len(idx.Entries) == 0 {
-			continue
-		}
-
-		dirName := filepath.Base(filepath.Dir(idxPath))
-
-		// Determine project path and last modified.
-		var projectPath, lastModified string
-		for _, e := range idx.Entries {
-			if projectPath == "" && e.ProjectPath != "" {
-				projectPath = e.ProjectPath
+		// Try to read the index file first.
+		idxPath := filepath.Join(dirPath, "sessions-index.json")
+		if data, err := os.ReadFile(idxPath); err == nil {
+			var idx IndexFile
+			if err := json.Unmarshal(data, &idx); err == nil && len(idx.Entries) > 0 {
+				var projectPath, lastModified string
+				for _, e := range idx.Entries {
+					if projectPath == "" && e.ProjectPath != "" {
+						projectPath = e.ProjectPath
+					}
+					if e.Modified > lastModified {
+						lastModified = e.Modified
+					}
+				}
+				if projectPath == "" {
+					projectPath = decodeDirName(dirName)
+				}
+				projects = append(projects, Project{
+					DirName:      dirName,
+					Path:         projectPath,
+					SessionCount: len(idx.Entries),
+					LastModified: lastModified,
+				})
+				continue
 			}
-			if e.Modified > lastModified {
-				lastModified = e.Modified
-			}
 		}
 
-		// Fall back to decoding the directory name if no projectPath in entries.
-		if projectPath == "" {
-			projectPath = decodeDirName(dirName)
+		// No index or empty — fall back to counting .jsonl files.
+		jsonlFiles, _ := filepath.Glob(filepath.Join(dirPath, "*.jsonl"))
+		if len(jsonlFiles) == 0 {
+			continue
+		}
+
+		var lastModified time.Time
+		for _, jpath := range jsonlFiles {
+			info, err := os.Stat(jpath)
+			if err != nil {
+				continue
+			}
+			if info.ModTime().After(lastModified) {
+				lastModified = info.ModTime()
+			}
 		}
 
 		projects = append(projects, Project{
 			DirName:      dirName,
-			Path:         projectPath,
-			SessionCount: len(idx.Entries),
-			LastModified: lastModified,
+			Path:         decodeDirName(dirName),
+			SessionCount: len(jsonlFiles),
+			LastModified: lastModified.Format(time.RFC3339),
 		})
 	}
 
@@ -338,21 +389,11 @@ func ListProjects() ([]Project, error) {
 // custom titles from JSONL files.
 func ListSessions(projectDir string) ([]Session, error) {
 	base := ClaudeDir()
-	idxPath := filepath.Join(base, projectDir, "sessions-index.json")
-
-	data, err := os.ReadFile(idxPath)
-	if err != nil {
-		return nil, fmt.Errorf("reading index: %w", err)
-	}
-
-	var idx IndexFile
-	if err := json.Unmarshal(data, &idx); err != nil {
-		return nil, fmt.Errorf("parsing index: %w", err)
-	}
+	projPath := filepath.Join(base, projectDir)
 
 	// Build a map of custom titles from JSONL files.
 	customTitles := make(map[string]string)
-	jsonlFiles, _ := filepath.Glob(filepath.Join(base, projectDir, "*.jsonl"))
+	jsonlFiles, _ := filepath.Glob(filepath.Join(projPath, "*.jsonl"))
 	for _, jpath := range jsonlFiles {
 		title, sessionID := findCustomTitle(jpath)
 		if title != "" {
@@ -360,27 +401,65 @@ func ListSessions(projectDir string) ([]Session, error) {
 		}
 	}
 
-	sessions := make([]Session, 0, len(idx.Entries))
-	for _, e := range idx.Entries {
-		s := Session{
-			SessionID:   e.SessionID,
-			Project:     projectDir,
-			ProjectPath: e.ProjectPath,
-			FullPath:    e.FullPath,
-			Summary:     e.Summary,
-			FirstPrompt: e.FirstPrompt,
-			Created:     e.Created,
-			Modified:    e.Modified,
-			MsgCount:    e.MessageCount,
-			GitBranch:   e.GitBranch,
+	// Try to read the index file.
+	idxPath := filepath.Join(projPath, "sessions-index.json")
+	if data, err := os.ReadFile(idxPath); err == nil {
+		var idx IndexFile
+		if err := json.Unmarshal(data, &idx); err == nil && len(idx.Entries) > 0 {
+			sessions := make([]Session, 0, len(idx.Entries))
+			for _, e := range idx.Entries {
+				s := Session{
+					SessionID:   e.SessionID,
+					Project:     projectDir,
+					ProjectPath: e.ProjectPath,
+					FullPath:    e.FullPath,
+					Summary:     e.Summary,
+					FirstPrompt: e.FirstPrompt,
+					Created:     e.Created,
+					Modified:    e.Modified,
+					MsgCount:    e.MessageCount,
+					GitBranch:   e.GitBranch,
+				}
+				if t, ok := customTitles[e.SessionID]; ok {
+					s.CustomTitle = t
+				}
+				sessions = append(sessions, s)
+			}
+
+			sort.Slice(sessions, func(i, j int) bool {
+				ti, _ := time.Parse(time.RFC3339, sessions[i].Modified)
+				tj, _ := time.Parse(time.RFC3339, sessions[j].Modified)
+				return ti.After(tj)
+			})
+
+			return sessions, nil
 		}
-		if t, ok := customTitles[e.SessionID]; ok {
+	}
+
+	// No index — build sessions from .jsonl files.
+	sessions := make([]Session, 0, len(jsonlFiles))
+	for _, jpath := range jsonlFiles {
+		fname := filepath.Base(jpath)
+		sessionID := strings.TrimSuffix(fname, ".jsonl")
+
+		var modified string
+		if info, err := os.Stat(jpath); err == nil {
+			modified = info.ModTime().Format(time.RFC3339)
+		}
+
+		s := Session{
+			SessionID:   sessionID,
+			Project:     projectDir,
+			ProjectPath: decodeDirName(projectDir),
+			FullPath:    jpath,
+			Modified:    modified,
+		}
+		if t, ok := customTitles[sessionID]; ok {
 			s.CustomTitle = t
 		}
 		sessions = append(sessions, s)
 	}
 
-	// Sort by modified date descending.
 	sort.Slice(sessions, func(i, j int) bool {
 		ti, _ := time.Parse(time.RFC3339, sessions[i].Modified)
 		tj, _ := time.Parse(time.RFC3339, sessions[j].Modified)
@@ -392,12 +471,18 @@ func ListSessions(projectDir string) ([]Session, error) {
 
 // decodeDirName converts an encoded project directory name back to a path.
 // e.g. "-Users-barryhall-Dev-code" -> "/Users/barryhall/Dev/code"
+// Claude Code encodes both "/" and "." as "-", so "--" represents "/."
+// (a hidden directory like .config, .claude). This is a heuristic and
+// can't distinguish hyphens in real directory names (e.g. "my-project").
 func decodeDirName(name string) string {
 	if len(name) == 0 {
 		return ""
 	}
-	// The leading dash represents the root "/", the rest are path separators.
-	return "/" + strings.ReplaceAll(name[1:], "-", "/")
+	s := name[1:]
+	// "--" is "/." (hidden directory prefix).
+	s = strings.ReplaceAll(s, "--", "/.")
+	s = strings.ReplaceAll(s, "-", "/")
+	return "/" + s
 }
 
 // removeFromIndex reads the index file, filters out the given session ID,
