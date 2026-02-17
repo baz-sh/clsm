@@ -133,7 +133,7 @@ func (m Model) updateLoadingProjects(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.filteredProjs = allIndices(len(m.projects))
 		m.projCursor = 0
-				m.phase = phaseProjects
+		m.phase = phaseProjects
 		return m, nil
 
 	case spinner.TickMsg:
@@ -172,12 +172,12 @@ func (m Model) updateProjects(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.projCursor = len(m.filteredProjs) - 1
 			}
 		case key.Matches(msg, m.keys.HalfUp):
-			m.projCursor -= pageSize / 2
+			m.projCursor -= m.projPageSize() / 2
 			if m.projCursor < 0 {
 				m.projCursor = 0
 			}
 		case key.Matches(msg, m.keys.HalfDn):
-			m.projCursor += pageSize / 2
+			m.projCursor += m.projPageSize() / 2
 			if m.projCursor >= len(m.filteredProjs) {
 				m.projCursor = len(m.filteredProjs) - 1
 			}
@@ -214,7 +214,7 @@ func (m Model) updateLoadingSessions(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.filteredSess = allIndices(len(m.sessions))
 		m.sessCursor = 0
-				m.phase = phaseSessions
+		m.phase = phaseSessions
 		return m, nil
 
 	case loadErrorMsg:
@@ -244,7 +244,7 @@ func (m Model) updateSessions(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sessions = nil
 			m.filteredSess = nil
 			m.sessCursor = 0
-						m.filtering = false
+			m.filtering = false
 			m.filter.SetValue("")
 			return m, nil
 		case key.Matches(msg, m.keys.Up):
@@ -262,12 +262,12 @@ func (m Model) updateSessions(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.sessCursor = len(m.filteredSess) - 1
 			}
 		case key.Matches(msg, m.keys.HalfUp):
-			m.sessCursor -= pageSize / 2
+			m.sessCursor -= m.sessPageSize() / 2
 			if m.sessCursor < 0 {
 				m.sessCursor = 0
 			}
 		case key.Matches(msg, m.keys.HalfDn):
-			m.sessCursor += pageSize / 2
+			m.sessCursor += m.sessPageSize() / 2
 			if m.sessCursor >= len(m.filteredSess) {
 				m.sessCursor = len(m.filteredSess) - 1
 			}

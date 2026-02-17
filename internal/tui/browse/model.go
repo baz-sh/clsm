@@ -37,34 +37,33 @@ type sessionItem struct {
 
 // Model is the Bubble Tea model for the browse TUI.
 type Model struct {
-	phase    phase
-	keys     keyMap
-	spinner  spinner.Model
-	progress progress.Model
+	phase        phase
+	keys         keyMap
+	spinner      spinner.Model
+	progress     progress.Model
 	progressPct  float64
 	progressInfo string
 	progressCh   <-chan session.LoadProgress
 	resultCh     <-chan projectsResultMsg
-	filter   textinput.Model
-	filtering bool
+	filter       textinput.Model
+	filtering    bool
 
-	projects       []projectItem
-	filteredProjs  []int // indices into projects
-	projCursor     int
+	projects      []projectItem
+	filteredProjs []int // indices into projects
+	projCursor    int
 
 	selectedProject session.Project
-	sessions       []sessionItem
-	filteredSess   []int // indices into sessions
-	sessCursor     int
+	sessions        []sessionItem
+	filteredSess    []int // indices into sessions
+	sessCursor      int
 
-	renameInput  textinput.Model
-	renameIdx    int // index into sessions being renamed
-	status       string
-	BackToHome   bool
-	width        int
-	height       int
+	renameInput textinput.Model
+	renameIdx   int // index into sessions being renamed
+	status      string
+	BackToHome  bool
+	width       int
+	height      int
 }
-
 
 // New creates a new browse Model.
 func New() Model {
@@ -129,7 +128,43 @@ func (m Model) View() string {
 	return ""
 }
 
-const pageSize = 15
+const maxPageSize = 15
+
+// projPageSize returns the number of project items that fit on screen.
+// Each project takes 2 lines (name + detail).
+func (m Model) projPageSize() int {
+	// overhead: title + blank + blank-after-items + page-info + help
+	overhead := 5
+	if m.filtering {
+		overhead += 2
+	}
+	ps := (m.height - overhead) / 2
+	if ps < 1 {
+		ps = 1
+	}
+	if ps > maxPageSize {
+		ps = maxPageSize
+	}
+	return ps
+}
+
+// sessPageSize returns the number of session items that fit on screen.
+// Each session takes up to 3 lines (title + date + optional prompt).
+func (m Model) sessPageSize() int {
+	// overhead: title + blank + blank-after-items + page-info + help
+	overhead := 5
+	if m.filtering {
+		overhead += 2
+	}
+	ps := (m.height - overhead) / 3
+	if ps < 1 {
+		ps = 1
+	}
+	if ps > maxPageSize {
+		ps = maxPageSize
+	}
+	return ps
+}
 
 func (m Model) viewProjects() string {
 	var b strings.Builder
@@ -144,9 +179,10 @@ func (m Model) viewProjects() string {
 	items := m.filteredProjs
 	cursor := m.projCursor
 
-	page := cursor / pageSize
-	start := page * pageSize
-	end := start + pageSize
+	ps := m.projPageSize()
+	page := cursor / ps
+	start := page * ps
+	end := start + ps
 	if end > len(items) {
 		end = len(items)
 	}
@@ -183,7 +219,7 @@ func (m Model) viewProjects() string {
 		b.WriteString(theme.Dim.Render(m.status))
 		b.WriteString("\n")
 	}
-	totalPages := (len(items) + pageSize - 1) / pageSize
+	totalPages := (len(items) + ps - 1) / ps
 	if totalPages < 1 {
 		totalPages = 1
 	}
@@ -213,9 +249,10 @@ func (m Model) viewSessions() string {
 	items := m.filteredSess
 	cursor := m.sessCursor
 
-	page := cursor / pageSize
-	start := page * pageSize
-	end := start + pageSize
+	ps := m.sessPageSize()
+	page := cursor / ps
+	start := page * ps
+	end := start + ps
 	if end > len(items) {
 		end = len(items)
 	}
@@ -253,7 +290,7 @@ func (m Model) viewSessions() string {
 	}
 
 	b.WriteString("\n")
-	totalPages := (len(items) + pageSize - 1) / pageSize
+	totalPages := (len(items) + ps - 1) / ps
 	if totalPages < 1 {
 		totalPages = 1
 	}
