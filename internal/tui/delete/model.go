@@ -43,6 +43,7 @@ type Model struct {
 	results    []session.DeleteResult
 	status     string // status message shown in search phase
 	searchTerm string // the term used for the current search
+	BackToHome bool
 	width      int
 	height     int
 }
@@ -104,7 +105,7 @@ func (m Model) viewSearch() string {
 		b.WriteString(theme.Dim.Render(m.status))
 		b.WriteString("\n\n")
 	}
-	b.WriteString(theme.Help.Render("enter: search • esc/q: quit"))
+	b.WriteString(theme.Help.Render("enter: search • esc/q: back"))
 	return b.String()
 }
 
@@ -176,7 +177,7 @@ func (m Model) viewSelect() string {
 	b.WriteString("\n")
 	b.WriteString(fmt.Sprintf(" %d/%d selected", selected, len(m.items)))
 	b.WriteString("\n")
-	b.WriteString(theme.Help.Render("j/k: navigate • space: toggle • a/A: sel/desel all • d/enter: delete • /: search • q: quit"))
+	b.WriteString(theme.Help.Render("j/k: navigate • space: toggle • a/A: sel/desel all • d/enter: delete • esc: back • q: quit"))
 
 	return b.String()
 }
@@ -196,7 +197,7 @@ func (m Model) viewConfirm() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(theme.Help.Render("y: yes • n: no"))
+	b.WriteString(theme.Help.Render("y: yes • n/esc: no"))
 	return b.String()
 }
 
@@ -245,6 +246,11 @@ func (m Model) selectedSessions() []session.Session {
 		}
 	}
 	return sessions
+}
+
+// WantsBackToHome returns true if the user quit to return to the home menu.
+func (m Model) WantsBackToHome() bool {
+	return m.BackToHome
 }
 
 // highlightMatch returns the string with the matched substring rendered bold.

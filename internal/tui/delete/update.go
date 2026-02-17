@@ -74,8 +74,10 @@ func (m Model) updateSearch(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Let 'q' pass through to the text input when focused.
 				break
 			}
+			m.BackToHome = true
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Back):
+			m.BackToHome = true
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Confirm):
 			term := m.input.Value()

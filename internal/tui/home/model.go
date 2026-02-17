@@ -109,6 +109,6 @@ func (m Model) View() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(theme.Help.Render("j/k: navigate • enter: select • q: quit"))
+	b.WriteString(theme.Help.Render("j/k: navigate • enter/l: select • q/esc: quit"))
 	return b.String()
 }

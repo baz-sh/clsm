@@ -32,28 +32,48 @@ func init() {
 }
 
 func runHome() error {
-	m := home.New()
-	p := tea.NewProgram(m)
-	result, err := p.Run()
-	if err != nil {
-		return err
-	}
+	for {
+		m := home.New()
+		p := tea.NewProgram(m)
+		result, err := p.Run()
+		if err != nil {
+			return err
+		}
 
-	choice := result.(home.Model).Result
-	switch choice {
-	case home.ChoiceBrowse:
-		return runAltScreen(browse.New())
-	case home.ChoiceDelete:
-		return runAltScreen(tuidelete.New())
-	case home.ChoiceNone:
-		return nil
-	default:
-		return fmt.Errorf("unknown choice: %s", choice)
+		choice := result.(home.Model).Result
+		switch choice {
+		case home.ChoiceBrowse:
+			if !runAndCheckBack(browse.New()) {
+				return nil
+			}
+		case home.ChoiceDelete:
+			if !runAndCheckBack(tuidelete.New()) {
+				return nil
+			}
+		case home.ChoiceNone:
+			return nil
+		default:
+			return fmt.Errorf("unknown choice: %s", choice)
+		}
 	}
 }
 
-func runAltScreen(model tea.Model) error {
+// backToHomer is implemented by TUI models that support returning to the home menu.
+type backToHomer interface {
+	tea.Model
+	WantsBackToHome() bool
+}
+
+// runAndCheckBack runs a TUI in alt-screen and returns true if the user
+// wants to go back to the home menu, false if they want to quit entirely.
+func runAndCheckBack(model backToHomer) bool {
 	p := tea.NewProgram(model, tea.WithAltScreen())
-	_, err := p.Run()
-	return err
+	result, err := p.Run()
+	if err != nil {
+		return false
+	}
+	if m, ok := result.(backToHomer); ok {
+		return m.WantsBackToHome()
+	}
+	return false
 }

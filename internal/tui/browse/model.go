@@ -52,9 +52,10 @@ type Model struct {
 	sessCursor     int
 	sessOffset     int
 
-	status string
-	width  int
-	height int
+	status     string
+	BackToHome bool
+	width      int
+	height     int
 }
 
 
@@ -162,7 +163,7 @@ func (m Model) viewProjects() string {
 	if m.filtering {
 		b.WriteString(theme.Help.Render("enter: apply filter • esc: clear filter"))
 	} else {
-		b.WriteString(theme.Help.Render("j/k: navigate • enter/l: open • /: filter • q: quit"))
+		b.WriteString(theme.Help.Render("j/k: navigate • enter/l: open • /: filter • q/esc: back"))
 	}
 
 	return b.String()
@@ -241,7 +242,7 @@ func (m Model) viewSessions() string {
 	if m.filtering {
 		b.WriteString(theme.Help.Render("enter: apply filter • esc: clear filter"))
 	} else {
-		b.WriteString(theme.Help.Render("j/k: navigate • esc/h: back • /: filter • q: quit"))
+		b.WriteString(theme.Help.Render("j/k: navigate • /: filter • q/esc/h: back"))
 	}
 
 	return b.String()
@@ -256,6 +257,11 @@ func (m Model) visibleHeight() int {
 		h = 3
 	}
 	return h
+}
+
+// WantsBackToHome returns true if the user quit to return to the home menu.
+func (m Model) WantsBackToHome() bool {
+	return m.BackToHome
 }
 
 func displayTitle(s session.Session) string {

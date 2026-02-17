@@ -97,7 +97,8 @@ func (m Model) updateProjects(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch {
-		case key.Matches(msg, m.keys.Quit):
+		case key.Matches(msg, m.keys.Quit), key.Matches(msg, m.keys.Back):
+			m.BackToHome = true
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Up):
 			if m.projCursor > 0 {
@@ -182,9 +183,7 @@ func (m Model) updateSessions(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch {
-		case key.Matches(msg, m.keys.Quit):
-			return m, tea.Quit
-		case key.Matches(msg, m.keys.Back):
+		case key.Matches(msg, m.keys.Quit), key.Matches(msg, m.keys.Back):
 			m.phase = phaseProjects
 			m.sessions = nil
 			m.filteredSess = nil
