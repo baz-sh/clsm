@@ -163,6 +163,25 @@ func SearchWithProgress(term string, progress chan<- SearchProgress) ([]Session,
 	for _, s := range found {
 		results = append(results, s)
 	}
+
+	// Enrich results with missing data.
+	for i := range results {
+		// Fill ProjectPath from directory name if missing.
+		if results[i].ProjectPath == "" && results[i].Project != "" {
+			results[i].ProjectPath = decodeDirName(results[i].Project)
+		}
+		// Fill MsgCount and FirstPrompt from JSONL if missing.
+		if results[i].MsgCount == 0 || results[i].FirstPrompt == "" {
+			prompt, count := scanSession(results[i].FullPath)
+			if results[i].MsgCount == 0 {
+				results[i].MsgCount = count
+			}
+			if results[i].FirstPrompt == "" {
+				results[i].FirstPrompt = prompt
+			}
+		}
+	}
+
 	return results, nil
 }
 
@@ -457,6 +476,19 @@ func ListSessions(projectDir string) ([]Session, error) {
 				return ti.After(tj)
 			})
 
+			// Enrich sessions with missing data from JSONL files.
+			for i := range sessions {
+				if sessions[i].MsgCount == 0 || sessions[i].FirstPrompt == "" {
+					prompt, count := scanSession(sessions[i].FullPath)
+					if sessions[i].MsgCount == 0 {
+						sessions[i].MsgCount = count
+					}
+					if sessions[i].FirstPrompt == "" {
+						sessions[i].FirstPrompt = prompt
+					}
+				}
+			}
+
 			return sessions, nil
 		}
 	}
@@ -472,12 +504,16 @@ func ListSessions(projectDir string) ([]Session, error) {
 			modified = info.ModTime().Format(time.RFC3339)
 		}
 
+		firstPrompt, msgCount := scanSession(jpath)
+
 		s := Session{
 			SessionID:   sessionID,
 			Project:     projectDir,
 			ProjectPath: decodeDirName(projectDir),
 			FullPath:    jpath,
 			Modified:    modified,
+			MsgCount:    msgCount,
+			FirstPrompt: firstPrompt,
 		}
 		if t, ok := customTitles[sessionID]; ok {
 			s.CustomTitle = t
@@ -497,9 +533,17 @@ func ListSessions(projectDir string) ([]Session, error) {
 // extractFirstPrompt reads a JSONL session file and returns the content of
 // the first user message. Returns empty string if none found.
 func extractFirstPrompt(path string) string {
+	prompt, _ := scanSession(path)
+	return prompt
+}
+
+// scanSession extracts the first user prompt and counts messages in a JSONL
+// session file in a single pass. Messages are lines with type "user" or
+// "assistant".
+func scanSession(path string) (firstPrompt string, msgCount int) {
 	f, err := os.Open(path)
 	if err != nil {
-		return ""
+		return "", 0
 	}
 	defer f.Close()
 
@@ -508,23 +552,25 @@ func extractFirstPrompt(path string) string {
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		if !strings.Contains(line, `"type":"user"`) {
+		isUser := strings.Contains(line, `"type":"user"`)
+		isAssistant := strings.Contains(line, `"type":"assistant"`)
+		if !isUser && !isAssistant {
 			continue
 		}
-		var entry struct {
-			Type    string `json:"type"`
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		}
-		if err := json.Unmarshal([]byte(line), &entry); err != nil {
-			continue
-		}
-		if entry.Type == "user" && entry.Message.Content != "" {
-			return entry.Message.Content
+		msgCount++
+		if firstPrompt == "" && isUser {
+			var entry struct {
+				Type    string `json:"type"`
+				Message struct {
+					Content string `json:"content"`
+				} `json:"message"`
+			}
+			if err := json.Unmarshal([]byte(line), &entry); err == nil && entry.Message.Content != "" {
+				firstPrompt = entry.Message.Content
+			}
 		}
 	}
-	return ""
+	return firstPrompt, msgCount
 }
 
 // decodeDirName converts an encoded project directory name back to a path.
@@ -541,6 +587,60 @@ func decodeDirName(name string) string {
 	s = strings.ReplaceAll(s, "--", "/.")
 	s = strings.ReplaceAll(s, "-", "/")
 	return "/" + s
+}
+
+// ListAllSessions returns all sessions across all projects, sorted by
+// most recently modified.
+func ListAllSessions() ([]Session, error) {
+	return ListAllSessionsWithProgress(nil)
+}
+
+// ListAllSessionsWithProgress is like ListAllSessions but sends progress
+// updates to the provided channel. The channel is closed when loading
+// completes. The channel may be nil to skip progress reporting.
+func ListAllSessionsWithProgress(progress chan<- LoadProgress) ([]Session, error) {
+	if progress != nil {
+		defer close(progress)
+	}
+	base := ClaudeDir()
+
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		return nil, fmt.Errorf("reading projects dir: %w", err)
+	}
+
+	var dirs []os.DirEntry
+	for _, e := range entries {
+		if e.IsDir() {
+			dirs = append(dirs, e)
+		}
+	}
+
+	report := func(current, total int) {
+		if progress != nil {
+			progress <- LoadProgress{
+				Current: current,
+				Total:   total,
+				Percent: float64(current) / float64(total),
+			}
+		}
+	}
+
+	var allSessions []Session
+	for i, dir := range dirs {
+		report(i+1, len(dirs))
+		sessions, err := ListSessions(dir.Name())
+		if err != nil {
+			continue
+		}
+		allSessions = append(allSessions, sessions...)
+	}
+
+	sort.Slice(allSessions, func(i, j int) bool {
+		return allSessions[i].Modified > allSessions[j].Modified
+	})
+
+	return allSessions, nil
 }
 
 // removeFromIndex reads the index file, filters out the given session ID,

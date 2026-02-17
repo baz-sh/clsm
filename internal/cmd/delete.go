@@ -6,27 +6,19 @@ import (
 	"os"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
 	"github.com/baz-sh/clsm/internal/session"
-	tuidelete "github.com/baz-sh/clsm/internal/tui/delete"
 )
 
 var deleteCmd = &cobra.Command{
-	Use:   "delete [search-term]",
+	Use:   "delete <search-term>",
 	Short: "Delete Claude Code sessions",
 	Long: `Delete Claude Code sessions matching a search term.
 
-With a search term: runs in CLI mode — finds matches, shows them, and
-prompts for confirmation before deleting.
-
-Without arguments: launches an interactive TUI for searching and deleting
-sessions.`,
+Finds matches, shows them, and prompts for confirmation before deleting.`,
+	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if len(args) == 0 {
-			return runTUI()
-		}
 		return runCLI(strings.Join(args, " "))
 	},
 }
@@ -82,10 +74,4 @@ func runCLI(term string) error {
 		return fmt.Errorf("%d session(s) failed to delete", failed)
 	}
 	return nil
-}
-
-func runTUI() error {
-	p := tea.NewProgram(tuidelete.New(), tea.WithAltScreen())
-	_, err := p.Run()
-	return err
 }

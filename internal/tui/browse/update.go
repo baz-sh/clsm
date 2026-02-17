@@ -12,22 +12,35 @@ import (
 	"github.com/baz-sh/clsm/internal/session"
 )
 
-// startLoadMsg is sent by Init to kick off project loading from Update,
-// where the model is returned and channel refs are preserved.
-type startLoadMsg struct{}
-
 // Messages for async operations.
+type startLoadMsg struct{}
+type startAllSessionsMsg struct{}
+
 type projectsResultMsg struct {
 	projects []session.Project
 	err      error
 }
+
 type loadProgressMsg session.LoadProgress
 type sessionsLoadedMsg []session.Session
 type loadErrorMsg struct{ err error }
 type renameResultMsg struct{ err error }
 
-// startLoadWithProgress launches the project loading goroutine and stores
-// the channels on the model. Returns the initial listener command.
+type allSessionsResultMsg struct {
+	sessions []session.Session
+	err      error
+}
+
+type searchResultMsg struct {
+	sessions []session.Session
+	err      error
+}
+
+type searchProgressMsg session.SearchProgress
+type deleteResultMsg []session.DeleteResult
+
+// --- Async command launchers ---
+
 func startLoadWithProgress(m *Model) tea.Cmd {
 	progressCh := make(chan session.LoadProgress, 10)
 	resultCh := make(chan projectsResultMsg, 1)
@@ -40,11 +53,9 @@ func startLoadWithProgress(m *Model) tea.Cmd {
 	m.progressCh = progressCh
 	m.resultCh = resultCh
 
-	return listenForLoadUpdates(progressCh, resultCh)
+	return listenForLoadUpdates(m.progressCh, m.resultCh)
 }
 
-// listenForLoadUpdates returns a tea.Cmd that waits for either a progress
-// update or the final load result.
 func listenForLoadUpdates(progressCh <-chan session.LoadProgress, resultCh <-chan projectsResultMsg) tea.Cmd {
 	return func() tea.Msg {
 		select {
@@ -53,6 +64,64 @@ func listenForLoadUpdates(progressCh <-chan session.LoadProgress, resultCh <-cha
 				return <-resultCh
 			}
 			return loadProgressMsg(p)
+		case r := <-resultCh:
+			return r
+		}
+	}
+}
+
+func startAllSessionsLoad(m *Model) tea.Cmd {
+	progressCh := make(chan session.LoadProgress, 10)
+	resultCh := make(chan allSessionsResultMsg, 1)
+
+	go func() {
+		sessions, err := session.ListAllSessionsWithProgress(progressCh)
+		resultCh <- allSessionsResultMsg{sessions: sessions, err: err}
+	}()
+
+	m.progressCh = progressCh
+	m.allSessResultCh = resultCh
+
+	return listenForAllSessUpdates(m.progressCh, m.allSessResultCh)
+}
+
+func listenForAllSessUpdates(progressCh <-chan session.LoadProgress, resultCh <-chan allSessionsResultMsg) tea.Cmd {
+	return func() tea.Msg {
+		select {
+		case p, ok := <-progressCh:
+			if !ok {
+				return <-resultCh
+			}
+			return loadProgressMsg(p)
+		case r := <-resultCh:
+			return r
+		}
+	}
+}
+
+func startSearchCmd(m *Model, term string) tea.Cmd {
+	progressCh := make(chan session.SearchProgress, 10)
+	resultCh := make(chan searchResultMsg, 1)
+
+	go func() {
+		sessions, err := session.SearchWithProgress(term, progressCh)
+		resultCh <- searchResultMsg{sessions: sessions, err: err}
+	}()
+
+	m.searchProgressCh = progressCh
+	m.searchResultCh = resultCh
+
+	return listenForSearchUpdates(m.searchProgressCh, m.searchResultCh)
+}
+
+func listenForSearchUpdates(progressCh <-chan session.SearchProgress, resultCh <-chan searchResultMsg) tea.Cmd {
+	return func() tea.Msg {
+		select {
+		case p, ok := <-progressCh:
+			if !ok {
+				return <-resultCh
+			}
+			return searchProgressMsg(p)
 		case r := <-resultCh:
 			return r
 		}
@@ -68,6 +137,22 @@ func loadSessionsCmd(projectDir string) tea.Cmd {
 		return sessionsLoadedMsg(sessions)
 	}
 }
+
+func renameCmd(s session.Session, newTitle string) tea.Cmd {
+	return func() tea.Msg {
+		err := session.Rename(s, newTitle)
+		return renameResultMsg{err: err}
+	}
+}
+
+func deleteSessCmd(sessions []session.Session) tea.Cmd {
+	return func() tea.Msg {
+		results := session.Delete(sessions)
+		return deleteResultMsg(results)
+	}
+}
+
+// --- Main Update ---
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -99,14 +184,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateProjects(msg)
 	case phaseLoadingSessions:
 		return m.updateLoadingSessions(msg)
+	case phaseLoadingAllSessions:
+		return m.updateLoadingAllSessions(msg)
+	case phaseSearchInput:
+		return m.updateSearchInput(msg)
+	case phaseSearching:
+		return m.updateSearching(msg)
 	case phaseSessions:
 		return m.updateSessions(msg)
 	case phaseRename:
 		return m.updateRename(msg)
+	case phaseConfirmDelete:
+		return m.updateConfirmDelete(msg)
+	case phaseDeleting:
+		return m.updateDeleting(msg)
+	case phaseDeleteResults:
+		return m.updateDeleteResults(msg)
 	}
 
 	return m, nil
 }
+
+// --- Phase handlers ---
 
 func (m Model) updateLoadingProjects(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -146,7 +245,6 @@ func (m Model) updateLoadingProjects(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateProjects(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// If filtering, route to text input first.
 	if m.filtering {
 		return m.updateFilterInput(msg, true)
 	}
@@ -184,7 +282,8 @@ func (m Model) updateProjects(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.projCursor < 0 {
 				m.projCursor = 0
 			}
-		case key.Matches(msg, m.keys.Open):
+		case key.Matches(msg, m.keys.Open), key.Matches(msg, m.keys.Toggle):
+			// Both enter/l and space open a project.
 			if len(m.filteredProjs) == 0 {
 				return m, nil
 			}
@@ -214,6 +313,8 @@ func (m Model) updateLoadingSessions(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.filteredSess = allIndices(len(m.sessions))
 		m.sessCursor = 0
+		m.selected = make(map[int]bool)
+		m.sessionSource = "project"
 		m.phase = phaseSessions
 		return m, nil
 
@@ -231,6 +332,121 @@ func (m Model) updateLoadingSessions(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) updateLoadingAllSessions(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case startAllSessionsMsg:
+		cmd := startAllSessionsLoad(&m)
+		return m, cmd
+
+	case loadProgressMsg:
+		m.progressPct = msg.Percent
+		m.progressInfo = fmt.Sprintf("Loading sessions %d/%d...", msg.Current, msg.Total)
+		progCmd := m.progress.SetPercent(msg.Percent)
+		listenCmd := listenForAllSessUpdates(m.progressCh, m.allSessResultCh)
+		return m, tea.Batch(progCmd, listenCmd)
+
+	case allSessionsResultMsg:
+		if msg.err != nil {
+			m.status = "Error: " + msg.err.Error()
+			m.BackToHome = true
+			return m, tea.Quit
+		}
+		m.sessions = make([]sessionItem, len(msg.sessions))
+		for i, s := range msg.sessions {
+			m.sessions[i] = sessionItem{session: s}
+		}
+		m.filteredSess = allIndices(len(m.sessions))
+		m.sessCursor = 0
+		m.selected = make(map[int]bool)
+		m.sessionSource = "all"
+		m.phase = phaseSessions
+		return m, nil
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+	}
+
+	return m, nil
+}
+
+func (m Model) updateSearchInput(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch {
+		case key.Matches(msg, m.keys.Quit):
+			if msg.String() == "q" && m.searchInput.Focused() {
+				break // let 'q' pass through to text input
+			}
+			m.BackToHome = true
+			return m, tea.Quit
+		case key.Matches(msg, m.keys.Back):
+			m.BackToHome = true
+			return m, tea.Quit
+		case key.Matches(msg, m.keys.Open): // enter
+			term := strings.TrimSpace(m.searchInput.Value())
+			if term == "" {
+				m.status = "Please enter a search term."
+				return m, nil
+			}
+			m.phase = phaseSearching
+			m.status = ""
+			m.searchTerm = term
+			m.progressPct = 0
+			m.progressInfo = "Starting search..."
+			cmd := startSearchCmd(&m, term)
+			return m, cmd
+		}
+	}
+
+	var cmd tea.Cmd
+	m.searchInput, cmd = m.searchInput.Update(msg)
+	return m, cmd
+}
+
+func (m Model) updateSearching(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case searchProgressMsg:
+		m.progressPct = msg.Percent
+		switch msg.Phase {
+		case "indexes":
+			m.progressInfo = fmt.Sprintf("Scanning indexes %d/%d...", msg.Current, msg.Total)
+		case "sessions":
+			m.progressInfo = fmt.Sprintf("Scanning sessions %d/%d...", msg.Current, msg.Total)
+		}
+		progCmd := m.progress.SetPercent(msg.Percent)
+		listenCmd := listenForSearchUpdates(m.searchProgressCh, m.searchResultCh)
+		return m, tea.Batch(progCmd, listenCmd)
+
+	case searchResultMsg:
+		if msg.err != nil {
+			m.phase = phaseSearchInput
+			m.status = "Search error: " + msg.err.Error()
+			m.searchInput.Focus()
+			return m, nil
+		}
+		if len(msg.sessions) == 0 {
+			m.phase = phaseSearchInput
+			m.status = "No sessions found. Try a different search term."
+			m.searchInput.Focus()
+			return m, nil
+		}
+		m.sessions = make([]sessionItem, len(msg.sessions))
+		for i, s := range msg.sessions {
+			m.sessions[i] = sessionItem{session: s}
+		}
+		m.filteredSess = allIndices(len(m.sessions))
+		m.sessCursor = 0
+		m.selected = make(map[int]bool)
+		m.sessionSource = "search"
+		m.phase = phaseSessions
+		return m, nil
+	}
+
+	return m, nil
+}
+
 func (m Model) updateSessions(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.filtering {
 		return m.updateFilterInput(msg, false)
@@ -239,14 +455,31 @@ func (m Model) updateSessions(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch {
-		case key.Matches(msg, m.keys.Quit), key.Matches(msg, m.keys.Back):
-			m.phase = phaseProjects
-			m.sessions = nil
-			m.filteredSess = nil
-			m.sessCursor = 0
-			m.filtering = false
-			m.filter.SetValue("")
-			return m, nil
+		case key.Matches(msg, m.keys.Quit):
+			return m, tea.Quit
+		case key.Matches(msg, m.keys.Back):
+			switch m.sessionSource {
+			case "project":
+				m.phase = phaseProjects
+				m.sessions = nil
+				m.filteredSess = nil
+				m.sessCursor = 0
+				m.selected = make(map[int]bool)
+				m.filtering = false
+				m.filter.SetValue("")
+				return m, nil
+			case "all":
+				m.BackToHome = true
+				return m, tea.Quit
+			case "search":
+				m.phase = phaseSearchInput
+				m.searchInput.Focus()
+				m.sessions = nil
+				m.filteredSess = nil
+				m.sessCursor = 0
+				m.selected = make(map[int]bool)
+				return m, nil
+			}
 		case key.Matches(msg, m.keys.Up):
 			if m.sessCursor > 0 {
 				m.sessCursor--
@@ -274,21 +507,49 @@ func (m Model) updateSessions(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.sessCursor < 0 {
 				m.sessCursor = 0
 			}
+		case key.Matches(msg, m.keys.Toggle):
+			if len(m.filteredSess) == 0 {
+				return m, nil
+			}
+			sessIdx := m.filteredSess[m.sessCursor]
+			if m.selected[sessIdx] {
+				delete(m.selected, sessIdx)
+			} else {
+				m.selected[sessIdx] = true
+			}
+			// Auto-advance cursor.
+			if m.sessCursor < len(m.filteredSess)-1 {
+				m.sessCursor++
+			}
+			return m, nil
+		case key.Matches(msg, m.keys.SelAll):
+			for _, idx := range m.filteredSess {
+				m.selected[idx] = true
+			}
+			return m, nil
+		case key.Matches(msg, m.keys.DeselAll):
+			m.selected = make(map[int]bool)
+			return m, nil
+		case key.Matches(msg, m.keys.Delete):
+			if len(m.selected) == 0 {
+				return m, nil
+			}
+			m.phase = phaseConfirmDelete
+			return m, nil
 		case key.Matches(msg, m.keys.Search):
 			m.filtering = true
 			m.filter.SetValue("")
 			m.filter.Focus()
 			return m, nil
 		case key.Matches(msg, m.keys.Rename):
-			if len(m.filteredSess) == 0 {
+			// Rename only works when nothing is selected.
+			if len(m.filteredSess) == 0 || len(m.selected) > 0 {
 				return m, nil
 			}
 			idx := m.filteredSess[m.sessCursor]
-			s := m.sessions[idx].session
 			m.renameIdx = idx
-			m.renameInput.SetValue(displayTitle(s))
+			m.renameInput.SetValue("")
 			m.renameInput.Focus()
-			m.renameInput.CursorEnd()
 			m.status = ""
 			m.phase = phaseRename
 			return m, nil
@@ -296,26 +557,6 @@ func (m Model) updateSessions(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
-}
-
-func displayTitle(s session.Session) string {
-	if s.CustomTitle != "" {
-		return s.CustomTitle
-	}
-	if s.Summary != "" {
-		return s.Summary
-	}
-	if s.FirstPrompt != "" {
-		return truncate(s.FirstPrompt, 60)
-	}
-	return s.SessionID
-}
-
-func renameCmd(s session.Session, newTitle string) tea.Cmd {
-	return func() tea.Msg {
-		err := session.Rename(s, newTitle)
-		return renameResultMsg{err: err}
-	}
 }
 
 func (m Model) updateRename(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -343,7 +584,6 @@ func (m Model) updateRename(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.phase = phaseSessions
 			return m, nil
 		}
-		// Update the session in our local state.
 		s := m.sessions[m.renameIdx].session
 		s.CustomTitle = strings.TrimSpace(m.renameInput.Value())
 		m.sessions[m.renameIdx] = sessionItem{session: s}
@@ -355,6 +595,74 @@ func (m Model) updateRename(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.renameInput, cmd = m.renameInput.Update(msg)
 	return m, cmd
+}
+
+func (m Model) updateConfirmDelete(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch {
+		case key.Matches(msg, m.keys.Yes):
+			m.phase = phaseDeleting
+			return m, tea.Batch(m.spinner.Tick, deleteSessCmd(m.selectedSessions()))
+		case key.Matches(msg, m.keys.No), key.Matches(msg, m.keys.Back):
+			m.phase = phaseSessions
+			return m, nil
+		case key.Matches(msg, m.keys.Quit):
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+func (m Model) updateDeleting(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case deleteResultMsg:
+		m.deleteResults = []session.DeleteResult(msg)
+		m.phase = phaseDeleteResults
+		return m, nil
+	default:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+	}
+}
+
+func (m Model) updateDeleteResults(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch {
+		case key.Matches(msg, m.keys.Open): // enter — back to sessions
+			// Remove successfully deleted sessions from local state.
+			deletedIDs := make(map[string]bool)
+			for _, r := range m.deleteResults {
+				if r.Success {
+					deletedIDs[r.SessionID] = true
+				}
+			}
+			var remaining []sessionItem
+			for _, item := range m.sessions {
+				if !deletedIDs[item.session.SessionID] {
+					remaining = append(remaining, item)
+				}
+			}
+			m.sessions = remaining
+			m.filteredSess = allIndices(len(m.sessions))
+			m.selected = make(map[int]bool)
+			if m.sessCursor >= len(m.filteredSess) {
+				m.sessCursor = len(m.filteredSess) - 1
+			}
+			if m.sessCursor < 0 {
+				m.sessCursor = 0
+			}
+			m.deleteResults = nil
+			m.phase = phaseSessions
+			return m, nil
+		case key.Matches(msg, m.keys.Quit), key.Matches(msg, m.keys.Back):
+			m.BackToHome = true
+			return m, tea.Quit
+		}
+	}
+	return m, nil
 }
 
 // updateFilterInput handles key input while the filter text input is focused.

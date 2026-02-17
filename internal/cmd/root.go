@@ -7,7 +7,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/baz-sh/clsm/internal/tui/browse"
-	tuidelete "github.com/baz-sh/clsm/internal/tui/delete"
 	"github.com/baz-sh/clsm/internal/tui/home"
 )
 
@@ -42,12 +41,16 @@ func runHome() error {
 
 		choice := result.(home.Model).Result
 		switch choice {
-		case home.ChoiceBrowse:
-			if !runAndCheckBack(browse.New()) {
+		case home.ChoiceProjects:
+			if !runAndCheckBack(browse.New(browse.ModeProjects)) {
 				return nil
 			}
-		case home.ChoiceDelete:
-			if !runAndCheckBack(tuidelete.New()) {
+		case home.ChoiceSessions:
+			if !runAndCheckBack(browse.New(browse.ModeSessions)) {
+				return nil
+			}
+		case home.ChoiceSearch:
+			if !runAndCheckBack(browse.New(browse.ModeSearch)) {
 				return nil
 			}
 		case home.ChoiceNone:

@@ -13,9 +13,10 @@ import (
 type Choice string
 
 const (
-	ChoiceBrowse Choice = "browse"
-	ChoiceDelete Choice = "delete"
-	ChoiceNone   Choice = ""
+	ChoiceProjects Choice = "projects"
+	ChoiceSessions Choice = "sessions"
+	ChoiceSearch   Choice = "search"
+	ChoiceNone     Choice = ""
 )
 
 type option struct {
@@ -25,15 +26,16 @@ type option struct {
 }
 
 var options = []option{
-	{ChoiceBrowse, "Browse", "Browse projects and sessions"},
-	{ChoiceDelete, "Delete", "Search and delete sessions"},
+	{ChoiceProjects, "Projects", "Browse projects and their sessions"},
+	{ChoiceSessions, "Sessions", "Browse all sessions"},
+	{ChoiceSearch, "Search", "Search across all sessions"},
 }
 
 type keyMap struct {
-	Up      key.Binding
-	Down    key.Binding
-	Select  key.Binding
-	Quit    key.Binding
+	Up     key.Binding
+	Down   key.Binding
+	Select key.Binding
+	Quit   key.Binding
 }
 
 func newKeyMap() keyMap {
@@ -62,7 +64,6 @@ type Model struct {
 	keys   keyMap
 	Result Choice
 }
-
 
 func New() Model {
 	return Model{keys: newKeyMap()}

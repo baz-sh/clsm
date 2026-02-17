@@ -15,7 +15,7 @@ var browseCmd = &cobra.Command{
 Navigate the project list, drill into a project to see its sessions,
 and filter results with /.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		p := tea.NewProgram(browse.New(), tea.WithAltScreen())
+		p := tea.NewProgram(browse.New(browse.ModeProjects), tea.WithAltScreen())
 		_, err := p.Run()
 		return err
 	},
