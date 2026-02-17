@@ -45,7 +45,7 @@ Browse all projects and drill into their sessions:
 clsm browse
 ```
 
-Navigate the project list, press `enter`/`l` to open a project's sessions, and use `/` to filter at any level.
+Navigate the project list, press `enter`/`l` to open a project's sessions, use `/` to filter at any level, and `r` to rename a session.
 
 ### Delete
 
@@ -79,6 +79,12 @@ Vim-style keybindings throughout.
 | `q` | Quit / back |
 | `/` | Filter (browse) / search (delete) |
 
+### Browse mode (sessions)
+
+| Key | Action |
+|---|---|
+| `r` | Rename session |
+
 ### Delete mode
 
 | Key | Action |
@@ -97,6 +103,8 @@ Sessions are found by scanning `~/.claude/projects/`:
 
 When deleting, `clsm` removes the `.jsonl` session file and removes the corresponding entry from the project's `sessions-index.json`.
 
+When renaming, `clsm` appends a new `custom-title` entry to the session's JSONL file — the same mechanism Claude Code uses internally.
+
 The TUI adapts colors automatically to light and dark terminal backgrounds.
 
 ## Project Structure
@@ -107,7 +115,7 @@ clsm/
 ├── internal/
 │   ├── session/
 │   │   ├── types.go                 # Domain types (Session, Project, etc.)
-│   │   └── store.go                 # Search, delete, list projects/sessions
+│   │   └── store.go                 # Search, delete, rename, list projects/sessions
 │   ├── cmd/
 │   │   ├── root.go                  # Root command + home menu launcher
 │   │   ├── browse.go                # Browse subcommand
@@ -119,7 +127,7 @@ clsm/
 │       │   └── model.go             # Home menu (mode picker)
 │       ├── browse/
 │       │   ├── model.go             # Browse TUI (projects + sessions)
-│       │   ├── update.go            # Navigation, filtering
+│       │   ├── update.go            # Navigation, filtering, rename
 │       │   └── keys.go              # Key bindings
 │       └── delete/
 │           ├── model.go             # Delete TUI with progress bar
