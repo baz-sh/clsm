@@ -159,8 +159,8 @@ func SearchWithProgress(term string, progress chan<- SearchProgress) ([]Session,
 	return results, nil
 }
 
-// findCustomTitle scans a JSONL file for a custom-title entry.
-// Returns the title and session ID, or empty strings if not found.
+// findCustomTitle scans a JSONL file for custom-title entries and returns
+// the last one (most recent rename). Returns empty strings if not found.
 func findCustomTitle(path string) (string, string) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -171,6 +171,7 @@ func findCustomTitle(path string) (string, string) {
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 
+	var lastTitle, lastSessionID string
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.Contains(line, `"custom-title"`) {
@@ -181,10 +182,11 @@ func findCustomTitle(path string) (string, string) {
 			continue
 		}
 		if ct.Type == "custom-title" && ct.CustomTitle != "" {
-			return ct.CustomTitle, ct.SessionID
+			lastTitle = ct.CustomTitle
+			lastSessionID = ct.SessionID
 		}
 	}
-	return "", ""
+	return lastTitle, lastSessionID
 }
 
 // enrichFromIndex fills in missing Session fields from the project's index file.
@@ -244,6 +246,32 @@ func Delete(sessions []Session) []DeleteResult {
 	}
 
 	return results
+}
+
+// Rename sets a new custom title for a session by appending a custom-title
+// entry to its JSONL file.
+func Rename(s Session, newTitle string) error {
+	entry := CustomTitle{
+		Type:        "custom-title",
+		CustomTitle: newTitle,
+		SessionID:   s.SessionID,
+	}
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return fmt.Errorf("marshaling custom-title: %w", err)
+	}
+
+	f, err := os.OpenFile(s.FullPath, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("opening session file: %w", err)
+	}
+	defer f.Close()
+
+	if _, err := f.Write(append([]byte("\n"), data...)); err != nil {
+		return fmt.Errorf("writing custom-title: %w", err)
+	}
+
+	return nil
 }
 
 // ListProjects returns all projects that contain sessions, sorted by most

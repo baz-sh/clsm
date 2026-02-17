@@ -13,6 +13,7 @@ type keyMap struct {
 	Quit    key.Binding
 	HalfUp  key.Binding
 	HalfDn  key.Binding
+	Rename  key.Binding
 }
 
 func newKeyMap() keyMap {
@@ -56,6 +57,10 @@ func newKeyMap() keyMap {
 		Quit: key.NewBinding(
 			key.WithKeys("q", "ctrl+c"),
 			key.WithHelp("q", "quit"),
+		),
+		Rename: key.NewBinding(
+			key.WithKeys("r"),
+			key.WithHelp("r", "rename"),
 		),
 	}
 }

@@ -14,6 +14,7 @@ import (
 type projectsLoadedMsg []session.Project
 type sessionsLoadedMsg []session.Session
 type loadErrorMsg struct{ err error }
+type renameResultMsg struct{ err error }
 
 func loadProjectsCmd() tea.Cmd {
 	return func() tea.Msg {
@@ -56,6 +57,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateLoadingSessions(msg)
 	case phaseSessions:
 		return m.updateSessions(msg)
+	case phaseRename:
+		return m.updateRename(msg)
 	}
 
 	return m, nil
@@ -224,10 +227,82 @@ func (m Model) updateSessions(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.filter.SetValue("")
 			m.filter.Focus()
 			return m, nil
+		case key.Matches(msg, m.keys.Rename):
+			if len(m.filteredSess) == 0 {
+				return m, nil
+			}
+			idx := m.filteredSess[m.sessCursor]
+			s := m.sessions[idx].session
+			m.renameIdx = idx
+			m.renameInput.SetValue(displayTitle(s))
+			m.renameInput.Focus()
+			m.renameInput.CursorEnd()
+			m.status = ""
+			m.phase = phaseRename
+			return m, nil
 		}
 	}
 
 	return m, nil
+}
+
+func displayTitle(s session.Session) string {
+	if s.CustomTitle != "" {
+		return s.CustomTitle
+	}
+	if s.Summary != "" {
+		return s.Summary
+	}
+	if s.FirstPrompt != "" {
+		return truncate(s.FirstPrompt, 60)
+	}
+	return s.SessionID
+}
+
+func renameCmd(s session.Session, newTitle string) tea.Cmd {
+	return func() tea.Msg {
+		err := session.Rename(s, newTitle)
+		return renameResultMsg{err: err}
+	}
+}
+
+func (m Model) updateRename(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.Type {
+		case tea.KeyEnter:
+			newTitle := strings.TrimSpace(m.renameInput.Value())
+			if newTitle == "" {
+				m.status = "Title cannot be empty."
+				return m, nil
+			}
+			m.renameInput.Blur()
+			return m, renameCmd(m.sessions[m.renameIdx].session, newTitle)
+		case tea.KeyEsc:
+			m.renameInput.Blur()
+			m.status = ""
+			m.phase = phaseSessions
+			return m, nil
+		}
+
+	case renameResultMsg:
+		if msg.err != nil {
+			m.status = "Rename failed: " + msg.err.Error()
+			m.phase = phaseSessions
+			return m, nil
+		}
+		// Update the session in our local state.
+		s := m.sessions[m.renameIdx].session
+		s.CustomTitle = strings.TrimSpace(m.renameInput.Value())
+		m.sessions[m.renameIdx] = sessionItem{session: s}
+		m.status = ""
+		m.phase = phaseSessions
+		return m, nil
+	}
+
+	var cmd tea.Cmd
+	m.renameInput, cmd = m.renameInput.Update(msg)
+	return m, cmd
 }
 
 // updateFilterInput handles key input while the filter text input is focused.

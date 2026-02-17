@@ -21,6 +21,7 @@ const (
 	phaseProjects
 	phaseLoadingSessions
 	phaseSessions
+	phaseRename
 )
 
 // projectItem wraps a Project for display.
@@ -52,10 +53,12 @@ type Model struct {
 	sessCursor     int
 	sessOffset     int
 
-	status     string
-	BackToHome bool
-	width      int
-	height     int
+	renameInput  textinput.Model
+	renameIdx    int // index into sessions being renamed
+	status       string
+	BackToHome   bool
+	width        int
+	height       int
 }
 
 
@@ -69,13 +72,19 @@ func New() Model {
 	fi.CharLimit = 256
 	fi.Width = 40
 
+	ri := textinput.New()
+	ri.Placeholder = "new title..."
+	ri.CharLimit = 256
+	ri.Width = 50
+
 	return Model{
-		phase:   phaseLoadingProjects,
-		keys:    newKeyMap(),
-		spinner: sp,
-		filter:  fi,
-		width:   80,
-		height:  24,
+		phase:       phaseLoadingProjects,
+		keys:        newKeyMap(),
+		spinner:     sp,
+		filter:      fi,
+		renameInput: ri,
+		width:       80,
+		height:      24,
 	}
 }
 
@@ -93,6 +102,8 @@ func (m Model) View() string {
 		return fmt.Sprintf("%s Loading sessions...\n", m.spinner.View())
 	case phaseSessions:
 		return m.viewSessions()
+	case phaseRename:
+		return m.viewRename()
 	}
 	return ""
 }
@@ -242,9 +253,28 @@ func (m Model) viewSessions() string {
 	if m.filtering {
 		b.WriteString(theme.Help.Render("enter: apply filter • esc: clear filter"))
 	} else {
-		b.WriteString(theme.Help.Render("j/k: navigate • /: filter • q/esc/h: back"))
+		b.WriteString(theme.Help.Render("j/k: navigate • /: filter • r: rename • q/esc/h: back"))
 	}
 
+	return b.String()
+}
+
+func (m Model) viewRename() string {
+	var b strings.Builder
+	b.WriteString(theme.Title.Render("clsm — Rename Session"))
+	b.WriteString("\n\n")
+
+	s := m.sessions[m.renameIdx].session
+	current := displayTitle(s)
+	b.WriteString(fmt.Sprintf("Current: %s\n\n", theme.Dim.Render(current)))
+	b.WriteString("New title:\n\n")
+	b.WriteString(m.renameInput.View())
+	b.WriteString("\n\n")
+	if m.status != "" {
+		b.WriteString(theme.Dim.Render(m.status))
+		b.WriteString("\n\n")
+	}
+	b.WriteString(theme.Help.Render("enter: save • esc: cancel"))
 	return b.String()
 }
 
@@ -262,19 +292,6 @@ func (m Model) visibleHeight() int {
 // WantsBackToHome returns true if the user quit to return to the home menu.
 func (m Model) WantsBackToHome() bool {
 	return m.BackToHome
-}
-
-func displayTitle(s session.Session) string {
-	if s.CustomTitle != "" {
-		return s.CustomTitle
-	}
-	if s.Summary != "" {
-		return s.Summary
-	}
-	if s.FirstPrompt != "" {
-		return truncate(s.FirstPrompt, 60)
-	}
-	return s.SessionID
 }
 
 func truncate(s string, max int) string {
