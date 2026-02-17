@@ -34,7 +34,7 @@ func init() {
 func runHome() error {
 	for {
 		m := home.New()
-		p := tea.NewProgram(m)
+		p := tea.NewProgram(m, tea.WithAltScreen())
 		result, err := p.Run()
 		if err != nil {
 			return err

@@ -17,15 +17,40 @@ func ClaudeDir() string {
 	return filepath.Join(home, ".claude", "projects")
 }
 
+// SearchProgress reports the current state of a search operation.
+type SearchProgress struct {
+	Phase   string  // "indexes" or "sessions"
+	Current int     // files processed so far
+	Total   int     // total files to process
+	Percent float64 // 0.0 to 1.0
+}
+
 // Search finds sessions matching the given term across all projects.
 // It searches summary, firstPrompt (from index files) and customTitle
 // (from JSONL files). Case-insensitive substring matching.
 func Search(term string) ([]Session, error) {
+	results, err := SearchWithProgress(term, nil)
+	return results, err
+}
+
+// SearchWithProgress is like Search but sends progress updates to the
+// provided channel. The channel is closed when the search completes.
+// The channel may be nil to skip progress reporting.
+func SearchWithProgress(term string, progress chan<- SearchProgress) ([]Session, error) {
+	if progress != nil {
+		defer close(progress)
+	}
 	base := ClaudeDir()
 	lower := strings.ToLower(term)
 
 	// Map of sessionID -> Session for deduplication.
 	found := make(map[string]Session)
+
+	report := func(p SearchProgress) {
+		if progress != nil {
+			progress <- p
+		}
+	}
 
 	// 1. Search index files for summary and firstPrompt matches.
 	indexes, err := filepath.Glob(filepath.Join(base, "*", "sessions-index.json"))
@@ -33,7 +58,14 @@ func Search(term string) ([]Session, error) {
 		return nil, fmt.Errorf("globbing index files: %w", err)
 	}
 
-	for _, idxPath := range indexes {
+	for i, idxPath := range indexes {
+		report(SearchProgress{
+			Phase:   "indexes",
+			Current: i + 1,
+			Total:   len(indexes),
+			Percent: float64(i+1) / float64(len(indexes)) * 0.3, // indexes = 0-30%
+		})
+
 		projectDir := filepath.Base(filepath.Dir(idxPath))
 
 		data, err := os.ReadFile(idxPath)
@@ -79,7 +111,14 @@ func Search(term string) ([]Session, error) {
 		return nil, fmt.Errorf("globbing jsonl files: %w", err)
 	}
 
-	for _, jpath := range jsonlFiles {
+	for i, jpath := range jsonlFiles {
+		report(SearchProgress{
+			Phase:   "sessions",
+			Current: i + 1,
+			Total:   len(jsonlFiles),
+			Percent: 0.3 + float64(i+1)/float64(len(jsonlFiles))*0.7, // sessions = 30-100%
+		})
+
 		title, sessionID := findCustomTitle(jpath)
 		if title == "" {
 			continue

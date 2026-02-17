@@ -1,27 +1,54 @@
 package delete
 
 import (
+	"fmt"
+
 	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/progress"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/baz-sh/clsm/internal/session"
 )
 
 // Custom messages for async operations.
-type searchResultMsg []session.Session
-type searchErrorMsg error
+type searchResultMsg struct {
+	sessions []session.Session
+	err      error
+}
+type searchProgressMsg session.SearchProgress
 type deleteResultMsg []session.DeleteResult
 type deleteErrorMsg error
 
-// searchCmd returns a tea.Cmd that searches for sessions.
-func searchCmd(term string) tea.Cmd {
+// startSearchWithProgress launches the search goroutine and stores the
+// channels on the model. Returns the initial listener command.
+func startSearchWithProgress(m *Model, term string) tea.Cmd {
+	progressCh := make(chan session.SearchProgress, 10)
+	resultCh := make(chan searchResultMsg, 1)
+
+	go func() {
+		results, err := session.SearchWithProgress(term, progressCh)
+		resultCh <- searchResultMsg{sessions: results, err: err}
+	}()
+
+	m.progressCh = progressCh
+	m.resultCh = resultCh
+
+	return listenForSearchUpdates(progressCh, resultCh)
+}
+
+// listenForSearchUpdates returns a tea.Cmd that waits for either a progress
+// update or the final search result.
+func listenForSearchUpdates(progressCh <-chan session.SearchProgress, resultCh <-chan searchResultMsg) tea.Cmd {
 	return func() tea.Msg {
-		results, err := session.Search(term)
-		if err != nil {
-			return searchErrorMsg(err)
+		select {
+		case p, ok := <-progressCh:
+			if !ok {
+				return <-resultCh
+			}
+			return searchProgressMsg(p)
+		case r := <-resultCh:
+			return r
 		}
-		return searchResultMsg(results)
 	}
 }
 
@@ -39,12 +66,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.progress.Width = msg.Width - 10
+		if m.progress.Width > 60 {
+			m.progress.Width = 60
+		}
+		if m.progress.Width < 20 {
+			m.progress.Width = 20
+		}
 		return m, nil
 	case tea.KeyMsg:
 		// Global quit on ctrl+c.
 		if msg.Type == tea.KeyCtrlC {
 			return m, tea.Quit
 		}
+	case progress.FrameMsg:
+		progressModel, cmd := m.progress.Update(msg)
+		m.progress = progressModel.(progress.Model)
+		return m, cmd
 	}
 
 	switch m.phase {
@@ -88,7 +126,10 @@ func (m Model) updateSearch(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.phase = phaseLoading
 			m.status = ""
 			m.searchTerm = term
-			return m, tea.Batch(m.spinner.Tick, searchCmd(term))
+			m.progressPct = 0
+			m.progressInfo = "Starting search..."
+			cmd := startSearchWithProgress(&m, term)
+			return m, cmd
 		}
 	}
 
@@ -99,32 +140,39 @@ func (m Model) updateSearch(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) updateLoading(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case searchProgressMsg:
+		m.progressPct = msg.Percent
+		switch msg.Phase {
+		case "indexes":
+			m.progressInfo = fmt.Sprintf("Scanning indexes %d/%d...", msg.Current, msg.Total)
+		case "sessions":
+			m.progressInfo = fmt.Sprintf("Scanning sessions %d/%d...", msg.Current, msg.Total)
+		}
+		progCmd := m.progress.SetPercent(msg.Percent)
+		listenCmd := listenForSearchUpdates(m.progressCh, m.resultCh)
+		return m, tea.Batch(progCmd, listenCmd)
+
 	case searchResultMsg:
-		if len(msg) == 0 {
+		if msg.err != nil {
+			m.phase = phaseSearch
+			m.status = "Search error: " + msg.err.Error()
+			m.input.Focus()
+			return m, nil
+		}
+		if len(msg.sessions) == 0 {
 			m.phase = phaseSearch
 			m.status = "No sessions found. Try a different search term."
 			m.input.Focus()
 			return m, nil
 		}
-		m.items = make([]sessionItem, len(msg))
-		for i, s := range msg {
+		m.items = make([]sessionItem, len(msg.sessions))
+		for i, s := range msg.sessions {
 			m.items[i] = sessionItem{session: s}
 		}
 		m.cursor = 0
 		m.offset = 0
 		m.phase = phaseSelect
 		return m, nil
-
-	case searchErrorMsg:
-		m.phase = phaseSearch
-		m.status = "Search error: " + msg.Error()
-		m.input.Focus()
-		return m, nil
-
-	case spinner.TickMsg:
-		var cmd tea.Cmd
-		m.spinner, cmd = m.spinner.Update(msg)
-		return m, cmd
 	}
 
 	return m, nil
@@ -227,7 +275,7 @@ func (m Model) updateDeleting(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.phase = phaseResults
 		return m, nil
 
-	case spinner.TickMsg:
+	case tea.Msg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd

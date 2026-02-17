@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -33,19 +34,24 @@ type sessionItem struct {
 
 // Model is the Bubble Tea model for the delete TUI.
 type Model struct {
-	phase      phase
-	input      textinput.Model
-	spinner    spinner.Model
-	keys       keyMap
-	items      []sessionItem
-	cursor     int
-	offset     int // scroll offset
-	results    []session.DeleteResult
-	status     string // status message shown in search phase
-	searchTerm string // the term used for the current search
-	BackToHome bool
-	width      int
-	height     int
+	phase        phase
+	input        textinput.Model
+	spinner      spinner.Model
+	progress     progress.Model
+	progressPct  float64
+	progressInfo string // e.g. "Scanning indexes 3/20..."
+	progressCh   <-chan session.SearchProgress
+	resultCh     <-chan searchResultMsg
+	keys         keyMap
+	items        []sessionItem
+	cursor       int
+	offset       int // scroll offset
+	results      []session.DeleteResult
+	status       string // status message shown in search phase
+	searchTerm   string // the term used for the current search
+	BackToHome   bool
+	width        int
+	height       int
 }
 
 
@@ -60,13 +66,19 @@ func New() Model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
+	prog := progress.New(
+		progress.WithScaledGradient("#6C50A3", "#57CC99"),
+		progress.WithWidth(40),
+	)
+
 	return Model{
-		phase:   phaseSearch,
-		input:   ti,
-		spinner: sp,
-		keys:    newKeyMap(),
-		width:   80,
-		height:  24,
+		phase:    phaseSearch,
+		input:    ti,
+		spinner:  sp,
+		progress: prog,
+		keys:     newKeyMap(),
+		width:    80,
+		height:   24,
 	}
 }
 
@@ -110,7 +122,18 @@ func (m Model) viewSearch() string {
 }
 
 func (m Model) viewLoading() string {
-	return fmt.Sprintf("%s Searching...\n", m.spinner.View())
+	var b strings.Builder
+	b.WriteString(theme.Title.Render("clsm — Delete Sessions"))
+	b.WriteString("\n\n")
+	b.WriteString(m.progress.ViewAs(m.progressPct))
+	b.WriteString("\n\n")
+	if m.progressInfo != "" {
+		b.WriteString(theme.Dim.Render(m.progressInfo))
+	} else {
+		b.WriteString(theme.Dim.Render("Searching..."))
+	}
+	b.WriteString("\n")
+	return b.String()
 }
 
 func (m Model) viewSelect() string {
