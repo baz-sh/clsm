@@ -43,8 +43,8 @@ func newKeyMap() keyMap {
 			key.WithHelp("ctrl+d", "half page down"),
 		),
 		Open: key.NewBinding(
-			key.WithKeys("enter", "l"),
-			key.WithHelp("enter/l", "open"),
+			key.WithKeys("enter", "l", " "),
+			key.WithHelp("enter/l/space", "open"),
 		),
 		Back: key.NewBinding(
 			key.WithKeys("esc", "h", "backspace"),
