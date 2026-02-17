@@ -9,7 +9,7 @@
 
 **Claude Session Manager** — a CLI/TUI tool for managing Claude Code sessions.
 
-Claude Code stores session data in `~/.claude/projects/` as JSONL files. `clsm` provides a fast, standalone way to search, inspect, and delete those sessions from the terminal.
+Claude Code stores session data in `~/.claude/projects/` as JSONL files. `clsm` provides a fast, standalone way to browse, search, and delete those sessions from the terminal.
 
 ## Install
 
@@ -27,9 +27,35 @@ go build -o clsm .
 
 ## Usage
 
-### CLI mode
+### Interactive (TUI)
 
-Pass a search term to find and delete matching sessions non-interactively:
+Launch the home menu to choose a mode:
+
+```sh
+clsm
+```
+
+This opens an interactive menu where you can select **Browse** or **Delete**.
+
+### Browse
+
+Browse all projects and drill into their sessions:
+
+```sh
+clsm browse
+```
+
+Navigate the project list, press `enter`/`l` to open a project's sessions, and use `/` to filter at any level.
+
+### Delete
+
+Search and delete sessions interactively:
+
+```sh
+clsm delete
+```
+
+Or pass a search term for non-interactive CLI mode:
 
 ```sh
 clsm delete "stow"
@@ -37,28 +63,30 @@ clsm delete "stow"
 
 This searches across session summaries, first prompts, and custom titles (case-insensitive), then prompts for confirmation before deleting.
 
-### TUI mode
+## Key Bindings
 
-Launch the interactive terminal UI:
+Vim-style keybindings throughout.
 
-```sh
-clsm delete
-```
-
-This opens a full-screen interface with search, multi-select, and confirmation phases.
-
-## TUI Key Bindings
+### Navigation
 
 | Key | Action |
 |---|---|
 | `j` / `k` | Navigate up/down |
 | `g` / `G` | Jump to top/bottom |
+| `ctrl+u` / `ctrl+d` | Half page up/down (browse) |
+| `enter` / `l` | Open / select |
+| `esc` / `h` | Back |
+| `q` | Quit / back |
+| `/` | Filter (browse) / search (delete) |
+
+### Delete mode
+
+| Key | Action |
+|---|---|
 | `space` | Toggle selection |
 | `a` / `A` | Select all / deselect all |
 | `d` / `enter` | Delete selected |
-| `/` | New search |
-| `esc` | Back |
-| `q` | Quit |
+| `y` / `n` | Confirm / cancel deletion |
 
 ## How It Works
 
@@ -69,23 +97,34 @@ Sessions are found by scanning `~/.claude/projects/`:
 
 When deleting, `clsm` removes the `.jsonl` session file and removes the corresponding entry from the project's `sessions-index.json`.
 
+The TUI adapts colors automatically to light and dark terminal backgrounds.
+
 ## Project Structure
 
 ```
 clsm/
-├── main.go                    # Entry point
+├── main.go                          # Entry point
 ├── internal/
 │   ├── session/
-│   │   ├── types.go           # Domain types
-│   │   └── store.go           # Search and delete logic
+│   │   ├── types.go                 # Domain types (Session, Project, etc.)
+│   │   └── store.go                 # Search, delete, list projects/sessions
 │   ├── cmd/
-│   │   ├── root.go            # Root Cobra command
-│   │   └── delete.go          # Delete subcommand (CLI + TUI)
+│   │   ├── root.go                  # Root command + home menu launcher
+│   │   ├── browse.go                # Browse subcommand
+│   │   └── delete.go                # Delete subcommand (CLI + TUI)
 │   └── tui/
+│       ├── theme/
+│       │   └── theme.go             # Adaptive color theme (light/dark)
+│       ├── home/
+│       │   └── model.go             # Home menu (mode picker)
+│       ├── browse/
+│       │   ├── model.go             # Browse TUI (projects + sessions)
+│       │   ├── update.go            # Navigation, filtering
+│       │   └── keys.go              # Key bindings
 │       └── delete/
-│           ├── model.go       # Bubble Tea model, init, view
-│           ├── update.go      # Update logic, async commands
-│           └── keys.go        # Key bindings
+│           ├── model.go             # Delete TUI with progress bar
+│           ├── update.go            # Search, select, confirm, delete flow
+│           └── keys.go              # Key bindings
 ```
 
 ---
