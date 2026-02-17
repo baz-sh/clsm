@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/baz-sh/clsm/internal/session"
+	"github.com/baz-sh/clsm/internal/tui/theme"
 )
 
 // Phase represents the current TUI state.
@@ -46,18 +47,6 @@ type Model struct {
 	height     int
 }
 
-// Styles
-var (
-	titleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99"))
-	selectedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("170"))
-	cursorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
-	dimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	successStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-	errorStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-	helpStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	checkStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("170")).SetString("[x]")
-	uncheckStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).SetString("[ ]")
-)
 
 // New creates a new Model for the delete TUI.
 func New() Model {
@@ -106,16 +95,16 @@ func (m Model) View() string {
 
 func (m Model) viewSearch() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("clsm — Delete Sessions"))
+	b.WriteString(theme.Title.Render("clsm — Delete Sessions"))
 	b.WriteString("\n\n")
 	b.WriteString("Search for sessions to delete:\n\n")
 	b.WriteString(m.input.View())
 	b.WriteString("\n\n")
 	if m.status != "" {
-		b.WriteString(dimStyle.Render(m.status))
+		b.WriteString(theme.Dim.Render(m.status))
 		b.WriteString("\n\n")
 	}
-	b.WriteString(helpStyle.Render("enter: search • esc/q: quit"))
+	b.WriteString(theme.Help.Render("enter: search • esc/q: quit"))
 	return b.String()
 }
 
@@ -125,7 +114,7 @@ func (m Model) viewLoading() string {
 
 func (m Model) viewSelect() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Select sessions to delete"))
+	b.WriteString(theme.Title.Render("Select sessions to delete"))
 	b.WriteString("\n\n")
 
 	// Calculate visible area (reserve lines for header, footer, help).
@@ -157,19 +146,19 @@ func (m Model) viewSelect() string {
 		item := m.items[i]
 		title := displayTitle(item.session)
 
-		check := uncheckStyle.String()
+		check := theme.Uncheck.String()
 		if item.selected {
-			check = checkStyle.String()
+			check = theme.Check.String()
 		}
 
 		prefix := "  "
-		style := dimStyle
+		style := theme.Dim
 		if i == m.cursor {
-			prefix = cursorStyle.Render("> ")
+			prefix = theme.Cursor.Render("> ")
 			style = lipgloss.NewStyle()
 		}
 		if item.selected {
-			style = selectedStyle
+			style = theme.Selected
 		}
 
 		highlightedTitle := highlightMatch(title, m.searchTerm)
@@ -179,7 +168,7 @@ func (m Model) viewSelect() string {
 		highlightedMatch := highlightMatch(matchPreview, m.searchTerm)
 		detail := fmt.Sprintf("     %s • %d msgs • matched %s: %s",
 			item.session.ProjectPath, item.session.MsgCount, item.session.MatchSource, highlightedMatch)
-		b.WriteString(dimStyle.Render(detail))
+		b.WriteString(theme.Dim.Render(detail))
 		b.WriteString("\n")
 	}
 
@@ -187,7 +176,7 @@ func (m Model) viewSelect() string {
 	b.WriteString("\n")
 	b.WriteString(fmt.Sprintf(" %d/%d selected", selected, len(m.items)))
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("j/k: navigate • space: toggle • a/A: sel/desel all • d/enter: delete • /: search • q: quit"))
+	b.WriteString(theme.Help.Render("j/k: navigate • space: toggle • a/A: sel/desel all • d/enter: delete • /: search • q: quit"))
 
 	return b.String()
 }
@@ -195,7 +184,7 @@ func (m Model) viewSelect() string {
 func (m Model) viewConfirm() string {
 	selected := m.countSelected()
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Confirm Deletion"))
+	b.WriteString(theme.Title.Render("Confirm Deletion"))
 	b.WriteString("\n\n")
 	b.WriteString(fmt.Sprintf("Delete %d session(s)?\n\n", selected))
 
@@ -207,7 +196,7 @@ func (m Model) viewConfirm() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("y: yes • n: no"))
+	b.WriteString(theme.Help.Render("y: yes • n: no"))
 	return b.String()
 }
 
@@ -217,16 +206,16 @@ func (m Model) viewDeleting() string {
 
 func (m Model) viewResults() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Results"))
+	b.WriteString(theme.Title.Render("Results"))
 	b.WriteString("\n\n")
 
 	var succeeded, failed int
 	for _, r := range m.results {
 		if r.Success {
-			b.WriteString(successStyle.Render(fmt.Sprintf("  ✓ Deleted %s", r.SessionID)))
+			b.WriteString(theme.Success.Render(fmt.Sprintf("  ✓ Deleted %s", r.SessionID)))
 			succeeded++
 		} else {
-			b.WriteString(errorStyle.Render(fmt.Sprintf("  ✗ Failed %s: %s", r.SessionID, r.Error)))
+			b.WriteString(theme.Error.Render(fmt.Sprintf("  ✗ Failed %s: %s", r.SessionID, r.Error)))
 			failed++
 		}
 		b.WriteString("\n")
@@ -234,7 +223,7 @@ func (m Model) viewResults() string {
 
 	b.WriteString("\n")
 	b.WriteString(fmt.Sprintf("  %d succeeded, %d failed\n\n", succeeded, failed))
-	b.WriteString(helpStyle.Render("enter: new search • q: quit"))
+	b.WriteString(theme.Help.Render("enter: new search • q: quit"))
 	return b.String()
 }
 
@@ -269,11 +258,10 @@ func highlightMatch(s, term string) string {
 	if idx < 0 {
 		return s
 	}
-	bold := lipgloss.NewStyle().Bold(true)
 	before := s[:idx]
 	match := s[idx : idx+len(term)]
 	after := s[idx+len(term):]
-	return before + bold.Render(match) + after
+	return before + theme.Bold.Render(match) + after
 }
 
 func truncate(s string, max int) string {

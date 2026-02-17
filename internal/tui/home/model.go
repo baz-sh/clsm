@@ -6,7 +6,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+
+	"github.com/baz-sh/clsm/internal/tui/theme"
 )
 
 type Choice string
@@ -62,12 +63,6 @@ type Model struct {
 	Result Choice
 }
 
-var (
-	titleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99"))
-	activeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
-	descStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	helpStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-)
 
 func New() Model {
 	return Model{keys: newKeyMap()}
@@ -99,21 +94,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) View() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("clsm — Claude Session Manager"))
+	b.WriteString(theme.Title.Render("clsm — Claude Session Manager"))
 	b.WriteString("\n\n")
 
 	for i, opt := range options {
 		prefix := "  "
 		label := opt.label
 		if i == m.cursor {
-			prefix = activeStyle.Render("> ")
-			label = activeStyle.Render(label)
+			prefix = theme.Cursor.Render("> ")
+			label = theme.Cursor.Render(label)
 		}
-		desc := descStyle.Render(fmt.Sprintf("  %s", opt.desc))
+		desc := theme.Dim.Render(fmt.Sprintf("  %s", opt.desc))
 		b.WriteString(fmt.Sprintf("%s%s%s\n", prefix, label, desc))
 	}
 
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("j/k: navigate • enter: select • q: quit"))
+	b.WriteString(theme.Help.Render("j/k: navigate • enter: select • q: quit"))
 	return b.String()
 }

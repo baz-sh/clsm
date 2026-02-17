@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/baz-sh/clsm/internal/session"
+	"github.com/baz-sh/clsm/internal/tui/theme"
 )
 
 type phase int
@@ -56,14 +57,6 @@ type Model struct {
 	height int
 }
 
-var (
-	titleStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99"))
-	cursorStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
-	dimStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	countStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("170"))
-	helpStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	breadcrumb   = lipgloss.NewStyle().Foreground(lipgloss.Color("63"))
-)
 
 // New creates a new browse Model.
 func New() Model {
@@ -105,7 +98,7 @@ func (m Model) View() string {
 
 func (m Model) viewProjects() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("clsm — Browse Projects"))
+	b.WriteString(theme.Title.Render("clsm — Browse Projects"))
 	b.WriteString("\n\n")
 
 	if m.filtering {
@@ -143,33 +136,33 @@ func (m Model) viewProjects() string {
 		prefix := "  "
 		style := lipgloss.NewStyle()
 		if vi == cursor {
-			prefix = cursorStyle.Render("> ")
-			style = cursorStyle
+			prefix = theme.Cursor.Render("> ")
+			style = theme.Cursor
 		}
 
-		count := countStyle.Render(fmt.Sprintf("[%d]", p.SessionCount))
+		count := theme.Count.Render(fmt.Sprintf("[%d]", p.SessionCount))
 		b.WriteString(fmt.Sprintf("%s%s %s\n", prefix, style.Render(path), count))
 
 		mod := formatTime(p.LastModified)
-		b.WriteString(fmt.Sprintf("    %s\n", dimStyle.Render("last modified: "+mod)))
+		b.WriteString(fmt.Sprintf("    %s\n", theme.Dim.Render("last modified: "+mod)))
 	}
 
 	if len(items) == 0 {
-		b.WriteString(dimStyle.Render("  No projects found."))
+		b.WriteString(theme.Dim.Render("  No projects found."))
 		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
 	if m.status != "" {
-		b.WriteString(dimStyle.Render(m.status))
+		b.WriteString(theme.Dim.Render(m.status))
 		b.WriteString("\n")
 	}
 	b.WriteString(fmt.Sprintf(" %d projects", len(items)))
 	b.WriteString("\n")
 	if m.filtering {
-		b.WriteString(helpStyle.Render("enter: apply filter • esc: clear filter"))
+		b.WriteString(theme.Help.Render("enter: apply filter • esc: clear filter"))
 	} else {
-		b.WriteString(helpStyle.Render("j/k: navigate • enter/l: open • /: filter • q: quit"))
+		b.WriteString(theme.Help.Render("j/k: navigate • enter/l: open • /: filter • q: quit"))
 	}
 
 	return b.String()
@@ -177,9 +170,9 @@ func (m Model) viewProjects() string {
 
 func (m Model) viewSessions() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("clsm — Browse Sessions"))
+	b.WriteString(theme.Title.Render("clsm — Browse Sessions"))
 	b.WriteString("  ")
-	b.WriteString(breadcrumb.Render(shortenPath(m.selectedProject.Path)))
+	b.WriteString(theme.Breadcrumb.Render(shortenPath(m.selectedProject.Path)))
 	b.WriteString("\n\n")
 
 	if m.filtering {
@@ -217,11 +210,11 @@ func (m Model) viewSessions() string {
 		prefix := "  "
 		style := lipgloss.NewStyle()
 		if vi == cursor {
-			prefix = cursorStyle.Render("> ")
-			style = cursorStyle
+			prefix = theme.Cursor.Render("> ")
+			style = theme.Cursor
 		}
 
-		msgs := countStyle.Render(fmt.Sprintf("[%d msgs]", s.MsgCount))
+		msgs := theme.Count.Render(fmt.Sprintf("[%d msgs]", s.MsgCount))
 		b.WriteString(fmt.Sprintf("%s%s %s\n", prefix, style.Render(title), msgs))
 
 		mod := formatTime(s.Modified)
@@ -229,16 +222,16 @@ func (m Model) viewSessions() string {
 		if s.GitBranch != "" {
 			branch = " • " + s.GitBranch
 		}
-		b.WriteString(fmt.Sprintf("    %s\n", dimStyle.Render(mod+branch)))
+		b.WriteString(fmt.Sprintf("    %s\n", theme.Dim.Render(mod+branch)))
 
 		prompt := truncate(s.FirstPrompt, m.width-6)
 		if prompt != "" {
-			b.WriteString(fmt.Sprintf("    %s\n", dimStyle.Render(prompt)))
+			b.WriteString(fmt.Sprintf("    %s\n", theme.Dim.Render(prompt)))
 		}
 	}
 
 	if len(items) == 0 {
-		b.WriteString(dimStyle.Render("  No sessions found."))
+		b.WriteString(theme.Dim.Render("  No sessions found."))
 		b.WriteString("\n")
 	}
 
@@ -246,9 +239,9 @@ func (m Model) viewSessions() string {
 	b.WriteString(fmt.Sprintf(" %d sessions", len(items)))
 	b.WriteString("\n")
 	if m.filtering {
-		b.WriteString(helpStyle.Render("enter: apply filter • esc: clear filter"))
+		b.WriteString(theme.Help.Render("enter: apply filter • esc: clear filter"))
 	} else {
-		b.WriteString(helpStyle.Render("j/k: navigate • esc/h: back • /: filter • q: quit"))
+		b.WriteString(theme.Help.Render("j/k: navigate • esc/h: back • /: filter • q: quit"))
 	}
 
 	return b.String()
