@@ -52,3 +52,11 @@ type DeleteResult struct {
 	Success   bool
 	Error     string
 }
+
+// Project represents a Claude Code project directory containing sessions.
+type Project struct {
+	DirName      string // encoded directory name (e.g. "-Users-barryhall-Dev-code")
+	Path         string // original project path (e.g. "/Users/barryhall/Dev/code")
+	SessionCount int
+	LastModified string // most recent session modified date
+}

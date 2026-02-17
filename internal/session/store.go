@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 )
 
 // ClaudeDir returns the path to the Claude projects directory.
@@ -203,6 +205,132 @@ func Delete(sessions []Session) []DeleteResult {
 	}
 
 	return results
+}
+
+// ListProjects returns all projects that contain sessions, sorted by most
+// recently modified session.
+func ListProjects() ([]Project, error) {
+	base := ClaudeDir()
+	indexes, err := filepath.Glob(filepath.Join(base, "*", "sessions-index.json"))
+	if err != nil {
+		return nil, fmt.Errorf("globbing index files: %w", err)
+	}
+
+	var projects []Project
+	for _, idxPath := range indexes {
+		data, err := os.ReadFile(idxPath)
+		if err != nil {
+			continue
+		}
+
+		var idx IndexFile
+		if err := json.Unmarshal(data, &idx); err != nil {
+			continue
+		}
+
+		if len(idx.Entries) == 0 {
+			continue
+		}
+
+		dirName := filepath.Base(filepath.Dir(idxPath))
+
+		// Determine project path and last modified.
+		var projectPath, lastModified string
+		for _, e := range idx.Entries {
+			if projectPath == "" && e.ProjectPath != "" {
+				projectPath = e.ProjectPath
+			}
+			if e.Modified > lastModified {
+				lastModified = e.Modified
+			}
+		}
+
+		// Fall back to decoding the directory name if no projectPath in entries.
+		if projectPath == "" {
+			projectPath = decodeDirName(dirName)
+		}
+
+		projects = append(projects, Project{
+			DirName:      dirName,
+			Path:         projectPath,
+			SessionCount: len(idx.Entries),
+			LastModified: lastModified,
+		})
+	}
+
+	// Sort by last modified descending.
+	sort.Slice(projects, func(i, j int) bool {
+		return projects[i].LastModified > projects[j].LastModified
+	})
+
+	return projects, nil
+}
+
+// ListSessions returns all sessions for a given project directory,
+// sorted by modified date descending. It also enriches sessions with
+// custom titles from JSONL files.
+func ListSessions(projectDir string) ([]Session, error) {
+	base := ClaudeDir()
+	idxPath := filepath.Join(base, projectDir, "sessions-index.json")
+
+	data, err := os.ReadFile(idxPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading index: %w", err)
+	}
+
+	var idx IndexFile
+	if err := json.Unmarshal(data, &idx); err != nil {
+		return nil, fmt.Errorf("parsing index: %w", err)
+	}
+
+	// Build a map of custom titles from JSONL files.
+	customTitles := make(map[string]string)
+	jsonlFiles, _ := filepath.Glob(filepath.Join(base, projectDir, "*.jsonl"))
+	for _, jpath := range jsonlFiles {
+		title, sessionID := findCustomTitle(jpath)
+		if title != "" {
+			customTitles[sessionID] = title
+		}
+	}
+
+	sessions := make([]Session, 0, len(idx.Entries))
+	for _, e := range idx.Entries {
+		s := Session{
+			SessionID:   e.SessionID,
+			Project:     projectDir,
+			ProjectPath: e.ProjectPath,
+			FullPath:    e.FullPath,
+			Summary:     e.Summary,
+			FirstPrompt: e.FirstPrompt,
+			Created:     e.Created,
+			Modified:    e.Modified,
+			MsgCount:    e.MessageCount,
+			GitBranch:   e.GitBranch,
+		}
+		if t, ok := customTitles[e.SessionID]; ok {
+			s.CustomTitle = t
+		}
+		sessions = append(sessions, s)
+	}
+
+	// Sort by modified date descending.
+	sort.Slice(sessions, func(i, j int) bool {
+		ti, _ := time.Parse(time.RFC3339, sessions[i].Modified)
+		tj, _ := time.Parse(time.RFC3339, sessions[j].Modified)
+		return ti.After(tj)
+	})
+
+	return sessions, nil
+}
+
+// decodeDirName converts an encoded project directory name back to a path.
+// e.g. "-Users-barryhall-Dev-code" -> "/Users/barryhall/Dev/code"
+func decodeDirName(name string) string {
+	if len(name) == 0 {
+		return ""
+	}
+	// The leading dash represents the root "/", the rest are path separators.
+	return "/" + strings.ReplaceAll(name[1:], "-", "/")
 }
 
 // removeFromIndex reads the index file, filters out the given session ID,
