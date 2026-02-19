@@ -108,13 +108,9 @@ clsm/
 │       │   └── theme.go             # Adaptive color theme (light/dark)
 │       ├── home/
 │       │   └── model.go             # Home menu (Projects/Sessions/Search)
-│       ├── browse/
-│       │   ├── model.go             # Browse TUI (projects, sessions, search, delete)
-│       │   ├── update.go            # Navigation, filtering, rename, multi-select, delete
-│       │   └── keys.go              # Key bindings
-│       └── delete/
-│           ├── model.go             # Delete TUI (unused, kept for reference)
-│           ├── update.go            # Search, select, confirm, delete flow
+│       └── browse/
+│           ├── model.go             # Browse TUI (projects, sessions, search, delete)
+│           ├── update.go            # Navigation, filtering, rename, multi-select, delete
 │           └── keys.go              # Key bindings
 ```
 
