@@ -407,7 +407,7 @@ func (m Model) viewSessions() string {
 		b.WriteString(fmt.Sprintf("      %s\n", theme.Dim.Render(detail)))
 
 		// Optional prompt line.
-		prompt := truncate(s.FirstPrompt, m.width-8)
+		prompt := truncate(firstLine(s.FirstPrompt), m.width-8)
 		if prompt != "" {
 			b.WriteString(fmt.Sprintf("      %s\n", theme.Dim.Render(prompt)))
 		}
@@ -538,13 +538,31 @@ func (m Model) viewPrunePreview() string {
 
 	b.WriteString(fmt.Sprintf("Prune %d session(s) with 0 messages?\n\n", len(m.pruneSessions)))
 
-	for _, s := range m.pruneSessions {
+	// title(1) + blank(1) + header(1) + blank(1) + items... + blank(1) + help(1) = 6 overhead
+	maxVisible := m.height - 6
+	if maxVisible < 1 {
+		maxVisible = 1
+	}
+	remaining := len(m.pruneSessions) - maxVisible
+	if remaining > 0 {
+		// Reserve one line for the "... and N more" indicator.
+		maxVisible--
+	}
+
+	for i, s := range m.pruneSessions {
+		if i >= maxVisible {
+			break
+		}
 		title := displayTitle(s)
 		project := ""
 		if s.ProjectPath != "" {
 			project = shortenPath(s.ProjectPath) + " — "
 		}
 		b.WriteString(fmt.Sprintf("  • %s%s\n", project, title))
+	}
+
+	if remaining > 0 {
+		b.WriteString(theme.Dim.Render(fmt.Sprintf("  ... and %d more\n", remaining)))
 	}
 
 	b.WriteString("\n")
@@ -557,16 +575,35 @@ func (m Model) viewPruneResults() string {
 	b.WriteString(theme.Title.Render("Prune Results"))
 	b.WriteString("\n\n")
 
+	// title(1) + blank(1) + items... + blank(1) + summary(1) + blank(1) + help(1) = 6 overhead
+	maxVisible := m.height - 6
+	if maxVisible < 1 {
+		maxVisible = 1
+	}
+	remaining := len(m.deleteResults) - maxVisible
+	if remaining > 0 {
+		maxVisible--
+	}
+
 	var succeeded, failed int
-	for _, r := range m.deleteResults {
+	for i, r := range m.deleteResults {
 		if r.Success {
-			b.WriteString(theme.Success.Render(fmt.Sprintf("  ✓ Deleted %s", r.SessionID)))
 			succeeded++
 		} else {
-			b.WriteString(theme.Error.Render(fmt.Sprintf("  ✗ Failed %s: %s", r.SessionID, r.Error)))
 			failed++
 		}
-		b.WriteString("\n")
+		if i < maxVisible {
+			if r.Success {
+				b.WriteString(theme.Success.Render(fmt.Sprintf("  ✓ Deleted %s", r.SessionID)))
+			} else {
+				b.WriteString(theme.Error.Render(fmt.Sprintf("  ✗ Failed %s: %s", r.SessionID, r.Error)))
+			}
+			b.WriteString("\n")
+		}
+	}
+
+	if remaining > 0 {
+		b.WriteString(theme.Dim.Render(fmt.Sprintf("  ... and %d more\n", remaining)))
 	}
 
 	b.WriteString("\n")
@@ -594,6 +631,16 @@ func (m Model) selectedSessions() []session.Session {
 // WantsBackToHome returns true if the user quit to return to the home menu.
 func (m Model) WantsBackToHome() bool {
 	return m.BackToHome
+}
+
+func firstLine(s string) string {
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			return line
+		}
+	}
+	return ""
 }
 
 func truncate(s string, max int) string {
@@ -639,8 +686,8 @@ func displayTitle(s session.Session) string {
 	if s.Summary != "" {
 		return s.Summary
 	}
-	if s.FirstPrompt != "" {
-		return truncate(s.FirstPrompt, 60)
+	if line := firstLine(s.FirstPrompt); line != "" {
+		return truncate(line, 60)
 	}
 	return s.SessionID
 }
