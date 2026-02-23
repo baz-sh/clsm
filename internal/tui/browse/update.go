@@ -200,6 +200,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateDeleting(msg)
 	case phaseDeleteResults:
 		return m.updateDeleteResults(msg)
+	case phasePruneLoading:
+		return m.updatePruneLoading(msg)
+	case phasePrunePreview:
+		return m.updatePrunePreview(msg)
+	case phasePruning:
+		return m.updatePruning(msg)
+	case phasePruneResults:
+		return m.updatePruneResults(msg)
 	}
 
 	return m, nil
@@ -678,6 +686,89 @@ func (m Model) updateDeleteResults(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 		}
+	}
+	return m, nil
+}
+
+// --- Prune phase handlers ---
+
+func (m Model) updatePruneLoading(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case startAllSessionsMsg:
+		cmd := startAllSessionsLoad(&m)
+		return m, cmd
+
+	case loadProgressMsg:
+		m.progressPct = msg.Percent
+		m.progressInfo = fmt.Sprintf("Loading sessions %d/%d...", msg.Current, msg.Total)
+		progCmd := m.progress.SetPercent(msg.Percent)
+		listenCmd := listenForAllSessUpdates(m.progressCh, m.allSessResultCh)
+		return m, tea.Batch(progCmd, listenCmd)
+
+	case allSessionsResultMsg:
+		if msg.err != nil {
+			m.status = "Error: " + msg.err.Error()
+			m.BackToHome = true
+			return m, tea.Quit
+		}
+		// Filter to 0-message sessions.
+		var empty []session.Session
+		for _, s := range msg.sessions {
+			if s.MsgCount == 0 {
+				empty = append(empty, s)
+			}
+		}
+		m.pruneSessions = empty
+		m.phase = phasePrunePreview
+		return m, nil
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+	}
+
+	return m, nil
+}
+
+func (m Model) updatePrunePreview(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if len(m.pruneSessions) == 0 {
+			// No sessions to prune — any key goes back to home.
+			m.BackToHome = true
+			return m, tea.Quit
+		}
+		switch {
+		case key.Matches(msg, m.keys.Yes):
+			m.phase = phasePruning
+			return m, tea.Batch(m.spinner.Tick, deleteSessCmd(m.pruneSessions))
+		case key.Matches(msg, m.keys.No), key.Matches(msg, m.keys.Back), key.Matches(msg, m.keys.Quit):
+			m.BackToHome = true
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+func (m Model) updatePruning(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case deleteResultMsg:
+		m.deleteResults = []session.DeleteResult(msg)
+		m.phase = phasePruneResults
+		return m, nil
+	default:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+	}
+}
+
+func (m Model) updatePruneResults(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg.(type) {
+	case tea.KeyMsg:
+		m.BackToHome = true
+		return m, tea.Quit
 	}
 	return m, nil
 }

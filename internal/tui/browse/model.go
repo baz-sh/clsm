@@ -22,6 +22,7 @@ const (
 	ModeProjects StartMode = iota
 	ModeSessions
 	ModeSearch
+	ModePrune
 )
 
 type phase int
@@ -38,6 +39,10 @@ const (
 	phaseConfirmDelete
 	phaseDeleting
 	phaseDeleteResults
+	phasePruneLoading
+	phasePrunePreview
+	phasePruning
+	phasePruneResults
 )
 
 // projectItem wraps a Project for display.
@@ -93,6 +98,9 @@ type Model struct {
 	// Delete
 	deleteResults []session.DeleteResult
 
+	// Prune
+	pruneSessions []session.Session
+
 	status     string
 	BackToHome bool
 	width      int
@@ -133,6 +141,8 @@ func New(mode StartMode) Model {
 	case ModeSearch:
 		initialPhase = phaseSearchInput
 		si.Focus()
+	case ModePrune:
+		initialPhase = phasePruneLoading
 	}
 
 	return Model{
@@ -158,6 +168,8 @@ func (m Model) Init() tea.Cmd {
 		return func() tea.Msg { return startAllSessionsMsg{} }
 	case ModeSearch:
 		return textinput.Blink
+	case ModePrune:
+		return func() tea.Msg { return startAllSessionsMsg{} }
 	}
 	return nil
 }
@@ -186,6 +198,14 @@ func (m Model) View() string {
 		return fmt.Sprintf("%s Deleting sessions...\n", m.spinner.View())
 	case phaseDeleteResults:
 		return m.viewDeleteResults()
+	case phasePruneLoading:
+		return m.viewLoading("Loading sessions...")
+	case phasePrunePreview:
+		return m.viewPrunePreview()
+	case phasePruning:
+		return fmt.Sprintf("%s Pruning sessions...\n", m.spinner.View())
+	case phasePruneResults:
+		return m.viewPruneResults()
 	}
 	return ""
 }
@@ -501,6 +521,57 @@ func (m Model) viewDeleteResults() string {
 		backLabel = "back to search"
 	}
 	b.WriteString(theme.Help.Render("enter: back to sessions • q/esc: " + backLabel))
+	return b.String()
+}
+
+func (m Model) viewPrunePreview() string {
+	var b strings.Builder
+	b.WriteString(theme.Title.Render("clsm — Prune Empty Sessions"))
+	b.WriteString("\n\n")
+
+	if len(m.pruneSessions) == 0 {
+		b.WriteString(theme.Dim.Render("No empty sessions found."))
+		b.WriteString("\n\n")
+		b.WriteString(theme.Help.Render("enter/esc: back to menu"))
+		return b.String()
+	}
+
+	b.WriteString(fmt.Sprintf("Prune %d session(s) with 0 messages?\n\n", len(m.pruneSessions)))
+
+	for _, s := range m.pruneSessions {
+		title := displayTitle(s)
+		project := ""
+		if s.ProjectPath != "" {
+			project = shortenPath(s.ProjectPath) + " — "
+		}
+		b.WriteString(fmt.Sprintf("  • %s%s\n", project, title))
+	}
+
+	b.WriteString("\n")
+	b.WriteString(theme.Help.Render("y: confirm • esc: cancel"))
+	return b.String()
+}
+
+func (m Model) viewPruneResults() string {
+	var b strings.Builder
+	b.WriteString(theme.Title.Render("Prune Results"))
+	b.WriteString("\n\n")
+
+	var succeeded, failed int
+	for _, r := range m.deleteResults {
+		if r.Success {
+			b.WriteString(theme.Success.Render(fmt.Sprintf("  ✓ Deleted %s", r.SessionID)))
+			succeeded++
+		} else {
+			b.WriteString(theme.Error.Render(fmt.Sprintf("  ✗ Failed %s: %s", r.SessionID, r.Error)))
+			failed++
+		}
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\n")
+	b.WriteString(fmt.Sprintf("  %d succeeded, %d failed\n\n", succeeded, failed))
+	b.WriteString(theme.Help.Render("enter/esc: back to menu"))
 	return b.String()
 }
 

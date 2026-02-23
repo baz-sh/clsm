@@ -53,6 +53,10 @@ func runHome() error {
 			if !runAndCheckBack(browse.New(browse.ModeSearch)) {
 				return nil
 			}
+		case home.ChoicePrune:
+			if !runAndCheckBack(browse.New(browse.ModePrune)) {
+				return nil
+			}
 		case home.ChoiceNone:
 			return nil
 		default:

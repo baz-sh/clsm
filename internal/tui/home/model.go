@@ -16,6 +16,7 @@ const (
 	ChoiceProjects Choice = "projects"
 	ChoiceSessions Choice = "sessions"
 	ChoiceSearch   Choice = "search"
+	ChoicePrune    Choice = "prune"
 	ChoiceNone     Choice = ""
 )
 
@@ -29,6 +30,7 @@ var options = []option{
 	{ChoiceProjects, "Projects", "Browse projects and their sessions"},
 	{ChoiceSessions, "Sessions", "Browse all sessions"},
 	{ChoiceSearch, "Search", "Search across all sessions"},
+	{ChoicePrune, "Prune", "Delete sessions with no messages"},
 }
 
 type keyMap struct {
