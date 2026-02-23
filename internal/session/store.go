@@ -85,13 +85,19 @@ func SearchWithProgress(term string, progress chan<- SearchProgress) ([]Session,
 			continue
 		}
 
+		projectPath := decodeDirName(projectDir)
+
 		for _, entry := range idx.Entries {
 			var matchSource, matchValue string
 
-			if strings.Contains(strings.ToLower(entry.Summary), lower) {
+			switch {
+			case strings.Contains(strings.ToLower(entry.Summary), lower):
 				matchSource = "summary"
 				matchValue = entry.Summary
-			} else {
+			case strings.Contains(strings.ToLower(projectPath), lower):
+				matchSource = "project"
+				matchValue = projectPath
+			default:
 				continue
 			}
 
@@ -127,35 +133,47 @@ func SearchWithProgress(term string, progress chan<- SearchProgress) ([]Session,
 		})
 
 		title, sessionID := findCustomTitle(jpath)
-		if title == "" {
-			continue
-		}
-		if !strings.Contains(strings.ToLower(title), lower) {
-			continue
-		}
 
 		projectDir := filepath.Base(filepath.Dir(jpath))
+		titleMatch := title != "" && strings.Contains(strings.ToLower(title), lower)
 
-		// Custom-title takes precedence — overwrite if already found.
-		existing, ok := found[sessionID]
-		if ok {
-			existing.CustomTitle = title
-			existing.MatchSource = "custom-title"
-			existing.MatchValue = title
-			found[sessionID] = existing
-		} else {
-			// Build a session from what we know; try to fill from index.
-			s := Session{
-				SessionID:   sessionID,
-				Project:     projectDir,
-				FullPath:    jpath,
-				CustomTitle: title,
-				MatchSource: "custom-title",
-				MatchValue:  title,
+		if titleMatch {
+			// Custom-title takes precedence — overwrite if already found.
+			existing, ok := found[sessionID]
+			if ok {
+				existing.CustomTitle = title
+				existing.MatchSource = "custom-title"
+				existing.MatchValue = title
+				found[sessionID] = existing
+			} else {
+				s := Session{
+					SessionID:   sessionID,
+					Project:     projectDir,
+					FullPath:    jpath,
+					CustomTitle: title,
+					MatchSource: "custom-title",
+					MatchValue:  title,
+				}
+				enrichFromIndex(&s, filepath.Dir(jpath))
+				found[sessionID] = s
 			}
-			// Try to enrich from the project's index file.
-			enrichFromIndex(&s, filepath.Dir(jpath))
-			found[sessionID] = s
+		} else if _, ok := found[sessionID]; !ok {
+			// Not already found — check project path.
+			projPath := decodeDirName(projectDir)
+			if strings.Contains(strings.ToLower(projPath), lower) {
+				s := Session{
+					SessionID:   sessionID,
+					Project:     projectDir,
+					FullPath:    jpath,
+					MatchSource: "project",
+					MatchValue:  projPath,
+				}
+				if title != "" {
+					s.CustomTitle = title
+				}
+				enrichFromIndex(&s, filepath.Dir(jpath))
+				found[sessionID] = s
+			}
 		}
 	}
 

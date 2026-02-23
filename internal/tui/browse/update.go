@@ -374,17 +374,14 @@ func (m Model) updateLoadingAllSessions(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) updateSearchInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch {
-		case key.Matches(msg, m.keys.Quit):
-			if msg.String() == "q" && m.searchInput.Focused() {
-				break // let 'q' pass through to text input
-			}
+		switch msg.Type {
+		case tea.KeyCtrlC:
 			m.BackToHome = true
 			return m, tea.Quit
-		case key.Matches(msg, m.keys.Back):
+		case tea.KeyEsc:
 			m.BackToHome = true
 			return m, tea.Quit
-		case key.Matches(msg, m.keys.Open): // enter
+		case tea.KeyEnter:
 			term := strings.TrimSpace(m.searchInput.Value())
 			if term == "" {
 				m.status = "Please enter a search term."
