@@ -460,14 +460,14 @@ func (m Model) updateSessions(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Back):
 			switch m.sessionSource {
 			case "project":
-				m.phase = phaseProjects
 				m.sessions = nil
 				m.filteredSess = nil
 				m.sessCursor = 0
 				m.selected = make(map[int]bool)
 				m.filtering = false
 				m.filter.SetValue("")
-				return m, nil
+				m.phase = phaseLoadingProjects
+				return m, func() tea.Msg { return startLoadMsg{} }
 			case "all":
 				m.BackToHome = true
 				return m, tea.Quit
@@ -658,8 +658,28 @@ func (m Model) updateDeleteResults(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.phase = phaseSessions
 			return m, nil
 		case key.Matches(msg, m.keys.Quit), key.Matches(msg, m.keys.Back):
-			m.BackToHome = true
-			return m, tea.Quit
+			switch m.sessionSource {
+			case "project":
+				m.sessions = nil
+				m.filteredSess = nil
+				m.sessCursor = 0
+				m.selected = make(map[int]bool)
+				m.deleteResults = nil
+				m.phase = phaseLoadingProjects
+				return m, func() tea.Msg { return startLoadMsg{} }
+			case "search":
+				m.phase = phaseSearchInput
+				m.searchInput.Focus()
+				m.sessions = nil
+				m.filteredSess = nil
+				m.sessCursor = 0
+				m.selected = make(map[int]bool)
+				m.deleteResults = nil
+				return m, nil
+			default:
+				m.BackToHome = true
+				return m, tea.Quit
+			}
 		}
 	}
 	return m, nil

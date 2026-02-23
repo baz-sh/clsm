@@ -493,7 +493,14 @@ func (m Model) viewDeleteResults() string {
 
 	b.WriteString("\n")
 	b.WriteString(fmt.Sprintf("  %d succeeded, %d failed\n\n", succeeded, failed))
-	b.WriteString(theme.Help.Render("enter: back to sessions • q/esc: back to menu"))
+	backLabel := "back to menu"
+	switch m.sessionSource {
+	case "project":
+		backLabel = "back to projects"
+	case "search":
+		backLabel = "back to search"
+	}
+	b.WriteString(theme.Help.Render("enter: back to sessions • q/esc: " + backLabel))
 	return b.String()
 }
 
