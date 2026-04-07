@@ -8,6 +8,7 @@ import (
 	"charm.land/bubbles/v2/progress"
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/glamour/v2"
 
 	"github.com/baz-sh/clsm/internal/memory"
 	"github.com/baz-sh/clsm/internal/tui/theme"
@@ -296,6 +297,7 @@ func (m Model) updateMemories(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			idx := m.filteredMems[m.memCursor]
 			m.viewingMemory = m.memories[idx]
+			m.renderedContent = renderMarkdown(m.viewingMemory.Content, m.isDark, m.width)
 			m.scrollOffset = 0
 			m.phase = phaseViewMemory
 			return m, nil
@@ -340,7 +342,7 @@ func (m Model) updateMemories(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) updateViewMemory(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
-		lines := strings.Split(m.viewingMemory.Content, "\n")
+		lines := strings.Split(m.renderedContent, "\n")
 		viewHeight := m.height - 6
 		if viewHeight < 1 {
 			viewHeight = 1
@@ -530,6 +532,35 @@ func (m *Model) applyFilter(isProjects bool) {
 			m.memCursor = 0
 		}
 	}
+}
+
+// renderMarkdown renders markdown content using glamour.
+// Falls back to raw content on error.
+func renderMarkdown(content string, isDark bool, width int) string {
+	style := "dark"
+	if !isDark {
+		style = "light"
+	}
+
+	w := width - 4
+	if w < 40 {
+		w = 40
+	}
+
+	r, err := glamour.NewTermRenderer(
+		glamour.WithStandardStyle(style),
+		glamour.WithWordWrap(w),
+	)
+	if err != nil {
+		return content
+	}
+
+	out, err := r.Render(content)
+	if err != nil {
+		return content
+	}
+
+	return strings.TrimRight(out, "\n")
 }
 
 func allIndices(n int) []int {

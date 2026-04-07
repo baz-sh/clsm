@@ -64,8 +64,9 @@ type Model struct {
 	selected        map[int]bool
 
 	// View memory content
-	viewingMemory memory.Memory
-	scrollOffset  int
+	viewingMemory   memory.Memory
+	renderedContent string // glamour-rendered markdown
+	scrollOffset    int
 
 	// Delete
 	deleteResults []memory.DeleteResult
@@ -370,10 +371,10 @@ func (m Model) viewMemoryContent() string {
 		b.WriteString("\n")
 	}
 	b.WriteString(m.theme.Dim.Render(strings.Repeat("─", min(m.width, 60))))
-	b.WriteString("\n\n")
+	b.WriteString("\n")
 
-	// Scrollable content.
-	lines := strings.Split(m.viewingMemory.Content, "\n")
+	// Scrollable content (glamour-rendered or raw).
+	lines := strings.Split(m.renderedContent, "\n")
 	viewHeight := m.height - 6
 	if viewHeight < 1 {
 		viewHeight = 1
