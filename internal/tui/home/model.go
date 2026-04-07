@@ -17,6 +17,7 @@ const (
 	ChoiceSessions Choice = "sessions"
 	ChoiceSearch   Choice = "search"
 	ChoiceMemories Choice = "memories"
+	ChoicePlans    Choice = "plans"
 	ChoicePrune    Choice = "prune"
 	ChoiceNone     Choice = ""
 )
@@ -32,6 +33,7 @@ var options = []option{
 	{ChoiceSessions, "Sessions", "Browse all sessions"},
 	{ChoiceSearch, "Search", "Search across all sessions"},
 	{ChoiceMemories, "Memories", "Browse and manage Claude memories"},
+	{ChoicePlans, "Plans", "Browse and clean up Claude plans"},
 	{ChoicePrune, "Prune", "Delete sessions with no messages"},
 }
 

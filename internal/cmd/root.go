@@ -9,6 +9,7 @@ import (
 	"github.com/baz-sh/clsm/internal/tui/browse"
 	"github.com/baz-sh/clsm/internal/tui/home"
 	"github.com/baz-sh/clsm/internal/tui/memorybrowse"
+	"github.com/baz-sh/clsm/internal/tui/planbrowse"
 )
 
 // rootCmd is the base command for clsm.
@@ -30,6 +31,7 @@ func init() {
 	rootCmd.AddCommand(deleteCmd)
 	rootCmd.AddCommand(browseCmd)
 	rootCmd.AddCommand(memoriesCmd)
+	rootCmd.AddCommand(plansCmd)
 }
 
 func runHome() error {
@@ -57,6 +59,10 @@ func runHome() error {
 			}
 		case home.ChoiceMemories:
 			if !runAndCheckBack(memorybrowse.New(memorybrowse.ModeProjects)) {
+				return nil
+			}
+		case home.ChoicePlans:
+			if !runAndCheckBack(planbrowse.New()) {
 				return nil
 			}
 		case home.ChoicePrune:
