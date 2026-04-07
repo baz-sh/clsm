@@ -72,7 +72,6 @@ func ListProjectsWithProgress(progress chan<- LoadProgress) ([]MemoryProject, er
 			name := filepath.Base(f)
 			if name == "MEMORY.md" {
 				hasIndex = true
-				continue
 			}
 			count++
 			if fi, err := os.Stat(f); err == nil {
@@ -82,7 +81,7 @@ func ListProjectsWithProgress(progress chan<- LoadProgress) ([]MemoryProject, er
 			}
 		}
 
-		if count == 0 && !hasIndex {
+		if count == 0 {
 			continue
 		}
 
@@ -120,12 +119,13 @@ func ListMemories(projectDir string) ([]Memory, error) {
 
 	var memories []Memory
 	for _, f := range files {
-		if filepath.Base(f) == "MEMORY.md" {
-			continue
-		}
 		m, err := ReadMemory(f)
 		if err != nil {
 			continue
+		}
+		if filepath.Base(f) == "MEMORY.md" {
+			m.Name = "Memory Index"
+			m.Type = "index"
 		}
 		m.ProjectDir = projectDir
 		m.ProjectPath = decodeDirName(projectDir)
