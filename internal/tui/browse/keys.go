@@ -1,6 +1,6 @@
 package browse
 
-import "github.com/charmbracelet/bubbles/key"
+import "charm.land/bubbles/v2/key"
 
 type keyMap struct {
 	Up       key.Binding
@@ -69,7 +69,7 @@ func newKeyMap() keyMap {
 			key.WithHelp("r", "rename"),
 		),
 		Toggle: key.NewBinding(
-			key.WithKeys(" "),
+			key.WithKeys("space"),
 			key.WithHelp("space", "toggle select"),
 		),
 		SelAll: key.NewBinding(

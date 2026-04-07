@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/progress"
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/progress"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/baz-sh/clsm/internal/session"
+	"github.com/baz-sh/clsm/internal/tui/theme"
 )
 
 // Messages for async operations.
@@ -156,24 +157,29 @@ func deleteSessCmd(sessions []session.Session) tea.Cmd {
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.BackgroundColorMsg:
+		m.isDark = msg.IsDark()
+		m.theme = theme.New(m.isDark)
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.progress.Width = msg.Width - 10
-		if m.progress.Width > 60 {
-			m.progress.Width = 60
+		pw := msg.Width - 10
+		if pw > 60 {
+			pw = 60
 		}
-		if m.progress.Width < 20 {
-			m.progress.Width = 20
+		if pw < 20 {
+			pw = 20
 		}
+		m.progress.SetWidth(pw)
 		return m, nil
-	case tea.KeyMsg:
-		if msg.Type == tea.KeyCtrlC {
+	case tea.KeyPressMsg:
+		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
 	case progress.FrameMsg:
-		progressModel, cmd := m.progress.Update(msg)
-		m.progress = progressModel.(progress.Model)
+		var cmd tea.Cmd
+		m.progress, cmd = m.progress.Update(msg)
 		return m, cmd
 	}
 
@@ -258,7 +264,7 @@ func (m Model) updateProjects(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(msg, m.keys.Quit), key.Matches(msg, m.keys.Back):
 			m.BackToHome = true
@@ -304,8 +310,7 @@ func (m Model) updateProjects(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Search):
 			m.filtering = true
 			m.filter.SetValue("")
-			m.filter.Focus()
-			return m, nil
+			return m, m.filter.Focus()
 		}
 	}
 
@@ -381,15 +386,15 @@ func (m Model) updateLoadingAllSessions(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) updateSearchInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyCtrlC:
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "ctrl+c":
 			m.BackToHome = true
 			return m, tea.Quit
-		case tea.KeyEsc:
+		case "esc":
 			m.BackToHome = true
 			return m, tea.Quit
-		case tea.KeyEnter:
+		case "enter":
 			term := strings.TrimSpace(m.searchInput.Value())
 			if term == "" {
 				m.status = "Please enter a search term."
@@ -428,14 +433,12 @@ func (m Model) updateSearching(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.phase = phaseSearchInput
 			m.status = "Search error: " + msg.err.Error()
-			m.searchInput.Focus()
-			return m, nil
+			return m, m.searchInput.Focus()
 		}
 		if len(msg.sessions) == 0 {
 			m.phase = phaseSearchInput
 			m.status = "No sessions found. Try a different search term."
-			m.searchInput.Focus()
-			return m, nil
+			return m, m.searchInput.Focus()
 		}
 		m.sessions = make([]sessionItem, len(msg.sessions))
 		for i, s := range msg.sessions {
@@ -458,7 +461,7 @@ func (m Model) updateSessions(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
@@ -478,12 +481,12 @@ func (m Model) updateSessions(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			case "search":
 				m.phase = phaseSearchInput
-				m.searchInput.Focus()
+				cmd := m.searchInput.Focus()
 				m.sessions = nil
 				m.filteredSess = nil
 				m.sessCursor = 0
 				m.selected = make(map[int]bool)
-				return m, nil
+				return m, cmd
 			}
 		case key.Matches(msg, m.keys.Up):
 			if m.sessCursor > 0 {
@@ -544,8 +547,7 @@ func (m Model) updateSessions(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Search):
 			m.filtering = true
 			m.filter.SetValue("")
-			m.filter.Focus()
-			return m, nil
+			return m, m.filter.Focus()
 		case key.Matches(msg, m.keys.Rename):
 			// Rename only works when nothing is selected.
 			if len(m.filteredSess) == 0 || len(m.selected) > 0 {
@@ -554,10 +556,10 @@ func (m Model) updateSessions(msg tea.Msg) (tea.Model, tea.Cmd) {
 			idx := m.filteredSess[m.sessCursor]
 			m.renameIdx = idx
 			m.renameInput.SetValue("")
-			m.renameInput.Focus()
+			cmd := m.renameInput.Focus()
 			m.status = ""
 			m.phase = phaseRename
-			return m, nil
+			return m, cmd
 		}
 	}
 
@@ -566,9 +568,9 @@ func (m Model) updateSessions(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) updateRename(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyEnter:
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "enter":
 			newTitle := strings.TrimSpace(m.renameInput.Value())
 			if newTitle == "" {
 				m.status = "Title cannot be empty."
@@ -576,7 +578,7 @@ func (m Model) updateRename(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.renameInput.Blur()
 			return m, renameCmd(m.sessions[m.renameIdx].session, newTitle)
-		case tea.KeyEsc:
+		case "esc":
 			m.renameInput.Blur()
 			m.status = ""
 			m.phase = phaseSessions
@@ -604,7 +606,7 @@ func (m Model) updateRename(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) updateConfirmDelete(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(msg, m.keys.Yes):
 			m.phase = phaseDeleting
@@ -634,7 +636,7 @@ func (m Model) updateDeleting(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) updateDeleteResults(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(msg, m.keys.Open): // enter — back to sessions
 			// Remove successfully deleted sessions from local state.
@@ -674,13 +676,13 @@ func (m Model) updateDeleteResults(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, func() tea.Msg { return startLoadMsg{} }
 			case "search":
 				m.phase = phaseSearchInput
-				m.searchInput.Focus()
+				cmd := m.searchInput.Focus()
 				m.sessions = nil
 				m.filteredSess = nil
 				m.sessCursor = 0
 				m.selected = make(map[int]bool)
 				m.deleteResults = nil
-				return m, nil
+				return m, cmd
 			default:
 				m.BackToHome = true
 				return m, tea.Quit
@@ -733,7 +735,7 @@ func (m Model) updatePruneLoading(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) updatePrunePreview(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if len(m.pruneSessions) == 0 {
 			// No sessions to prune — any key goes back to home.
 			m.BackToHome = true
@@ -766,7 +768,7 @@ func (m Model) updatePruning(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) updatePruneResults(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		m.BackToHome = true
 		return m, tea.Quit
 	}
@@ -776,14 +778,14 @@ func (m Model) updatePruneResults(msg tea.Msg) (tea.Model, tea.Cmd) {
 // updateFilterInput handles key input while the filter text input is focused.
 func (m Model) updateFilterInput(msg tea.Msg, isProjects bool) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyEnter:
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "enter":
 			m.filtering = false
 			m.filter.Blur()
 			m.applyFilter(isProjects)
 			return m, nil
-		case tea.KeyEsc:
+		case "esc":
 			m.filtering = false
 			m.filter.Blur()
 			m.filter.SetValue("")

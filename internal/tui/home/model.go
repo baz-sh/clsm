@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/baz-sh/clsm/internal/tui/theme"
 )
@@ -65,17 +65,26 @@ type Model struct {
 	cursor int
 	keys   keyMap
 	Result Choice
+	isDark bool
+	theme  theme.Theme
 }
 
 func New() Model {
-	return Model{keys: newKeyMap()}
+	return Model{
+		keys:  newKeyMap(),
+		theme: theme.New(true),
+	}
 }
 
-func (m Model) Init() tea.Cmd { return nil }
+func (m Model) Init() tea.Cmd { return tea.RequestBackgroundColor }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.BackgroundColorMsg:
+		m.isDark = msg.IsDark()
+		m.theme = theme.New(m.isDark)
+		return m, nil
+	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(msg, m.keys.Quit):
 			return m, tea.Quit
@@ -95,23 +104,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) View() string {
+func (m Model) View() tea.View {
 	var b strings.Builder
-	b.WriteString(theme.Title.Render("clsm — Claude Session Manager"))
+	b.WriteString(m.theme.Title.Render("clsm — Claude Session Manager"))
 	b.WriteString("\n\n")
 
 	for i, opt := range options {
 		prefix := "  "
 		label := opt.label
 		if i == m.cursor {
-			prefix = theme.Cursor.Render("> ")
-			label = theme.Cursor.Render(label)
+			prefix = m.theme.Cursor.Render("> ")
+			label = m.theme.Cursor.Render(label)
 		}
-		desc := theme.Dim.Render(fmt.Sprintf("  %s", opt.desc))
+		desc := m.theme.Dim.Render(fmt.Sprintf("  %s", opt.desc))
 		b.WriteString(fmt.Sprintf("%s%s%s\n", prefix, label, desc))
 	}
 
 	b.WriteString("\n")
-	b.WriteString(theme.Help.Render("j/k: navigate • enter/l: select • q/esc: quit"))
-	return b.String()
+	b.WriteString(m.theme.Help.Render("j/k: navigate • enter/l: select • q/esc: quit"))
+
+	v := tea.NewView(b.String())
+	v.AltScreen = true
+	return v
 }

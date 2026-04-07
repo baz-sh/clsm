@@ -5,11 +5,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/progress"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/progress"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/baz-sh/clsm/internal/session"
 	"github.com/baz-sh/clsm/internal/tui/theme"
@@ -60,6 +60,8 @@ type Model struct {
 	startMode    StartMode
 	phase        phase
 	keys         keyMap
+	isDark       bool
+	theme        theme.Theme
 	spinner      spinner.Model
 	progress     progress.Model
 	progressPct  float64
@@ -115,20 +117,20 @@ func New(mode StartMode) Model {
 	fi := textinput.New()
 	fi.Placeholder = "filter..."
 	fi.CharLimit = 256
-	fi.Width = 40
+	fi.SetWidth(40)
 
 	ri := textinput.New()
 	ri.Placeholder = "new title..."
 	ri.CharLimit = 256
-	ri.Width = 50
+	ri.SetWidth(50)
 
 	si := textinput.New()
 	si.Placeholder = "Enter search term..."
 	si.CharLimit = 256
-	si.Width = 50
+	si.SetWidth(50)
 
 	prog := progress.New(
-		progress.WithScaledGradient("#6C50A3", "#57CC99"),
+		progress.WithColors(lipgloss.Color("#6C50A3"), lipgloss.Color("#57CC99")),
 		progress.WithWidth(40),
 	)
 
@@ -149,6 +151,7 @@ func New(mode StartMode) Model {
 		startMode:   mode,
 		phase:       initialPhase,
 		keys:        newKeyMap(),
+		theme:       theme.New(true),
 		spinner:     sp,
 		progress:    prog,
 		filter:      fi,
@@ -161,66 +164,70 @@ func New(mode StartMode) Model {
 }
 
 func (m Model) Init() tea.Cmd {
+	bgCmd := tea.RequestBackgroundColor
 	switch m.startMode {
 	case ModeProjects:
-		return func() tea.Msg { return startLoadMsg{} }
+		return tea.Batch(bgCmd, func() tea.Msg { return startLoadMsg{} })
 	case ModeSessions:
-		return func() tea.Msg { return startAllSessionsMsg{} }
+		return tea.Batch(bgCmd, func() tea.Msg { return startAllSessionsMsg{} })
 	case ModeSearch:
-		return textinput.Blink
+		return tea.Batch(bgCmd, textinput.Blink)
 	case ModePrune:
-		return func() tea.Msg { return startAllSessionsMsg{} }
+		return tea.Batch(bgCmd, func() tea.Msg { return startAllSessionsMsg{} })
 	}
-	return nil
+	return bgCmd
 }
 
-func (m Model) View() string {
+func (m Model) View() tea.View {
+	var content string
 	switch m.phase {
 	case phaseLoadingProjects:
-		return m.viewLoading("Loading projects...")
+		content = m.viewLoading("Loading projects...")
 	case phaseProjects:
-		return m.viewProjects()
+		content = m.viewProjects()
 	case phaseLoadingSessions:
-		return fmt.Sprintf("%s Loading sessions...\n", m.spinner.View())
+		content = fmt.Sprintf("%s Loading sessions...\n", m.spinner.View())
 	case phaseLoadingAllSessions:
-		return m.viewLoading("Loading sessions...")
+		content = m.viewLoading("Loading sessions...")
 	case phaseSearchInput:
-		return m.viewSearchInput()
+		content = m.viewSearchInput()
 	case phaseSearching:
-		return m.viewLoading("Searching...")
+		content = m.viewLoading("Searching...")
 	case phaseSessions:
-		return m.viewSessions()
+		content = m.viewSessions()
 	case phaseRename:
-		return m.viewRename()
+		content = m.viewRename()
 	case phaseConfirmDelete:
-		return m.viewConfirmDelete()
+		content = m.viewConfirmDelete()
 	case phaseDeleting:
-		return fmt.Sprintf("%s Deleting sessions...\n", m.spinner.View())
+		content = fmt.Sprintf("%s Deleting sessions...\n", m.spinner.View())
 	case phaseDeleteResults:
-		return m.viewDeleteResults()
+		content = m.viewDeleteResults()
 	case phasePruneLoading:
-		return m.viewLoading("Loading sessions...")
+		content = m.viewLoading("Loading sessions...")
 	case phasePrunePreview:
-		return m.viewPrunePreview()
+		content = m.viewPrunePreview()
 	case phasePruning:
-		return fmt.Sprintf("%s Pruning sessions...\n", m.spinner.View())
+		content = fmt.Sprintf("%s Pruning sessions...\n", m.spinner.View())
 	case phasePruneResults:
-		return m.viewPruneResults()
+		content = m.viewPruneResults()
 	}
-	return ""
+	v := tea.NewView(content)
+	v.AltScreen = true
+	return v
 }
 
 // viewLoading renders a progress bar with a message.
 func (m Model) viewLoading(defaultMsg string) string {
 	var b strings.Builder
-	b.WriteString(theme.Title.Render("clsm — Browse"))
+	b.WriteString(m.theme.Title.Render("clsm — Browse"))
 	b.WriteString("\n\n")
 	b.WriteString(m.progress.ViewAs(m.progressPct))
 	b.WriteString("\n\n")
 	if m.progressInfo != "" {
-		b.WriteString(theme.Dim.Render(m.progressInfo))
+		b.WriteString(m.theme.Dim.Render(m.progressInfo))
 	} else {
-		b.WriteString(theme.Dim.Render(defaultMsg))
+		b.WriteString(m.theme.Dim.Render(defaultMsg))
 	}
 	b.WriteString("\n")
 	return b.String()
@@ -264,7 +271,7 @@ func (m Model) sessPageSize() int {
 
 func (m Model) viewProjects() string {
 	var b strings.Builder
-	b.WriteString(theme.Title.Render("clsm — Browse Projects"))
+	b.WriteString(m.theme.Title.Render("clsm — Browse Projects"))
 	b.WriteString("\n\n")
 
 	if m.filtering {
@@ -290,11 +297,11 @@ func (m Model) viewProjects() string {
 		prefix := "  "
 		style := lipgloss.NewStyle()
 		if vi == cursor {
-			prefix = theme.Cursor.Render("> ")
-			style = theme.Cursor
+			prefix = m.theme.Cursor.Render("> ")
+			style = m.theme.Cursor
 		}
 
-		count := theme.Count.Render(fmt.Sprintf("[%d]", p.SessionCount))
+		count := m.theme.Count.Render(fmt.Sprintf("[%d]", p.SessionCount))
 		b.WriteString(fmt.Sprintf("%s%s %s\n", prefix, style.Render(path), count))
 
 		mod := formatTime(p.LastModified)
@@ -302,17 +309,17 @@ func (m Model) viewProjects() string {
 		if p.LastPrompt != "" {
 			detail += " • " + truncate(p.LastPrompt, m.width-len(mod)-22)
 		}
-		b.WriteString(fmt.Sprintf("    %s\n", theme.Dim.Render(detail)))
+		b.WriteString(fmt.Sprintf("    %s\n", m.theme.Dim.Render(detail)))
 	}
 
 	if len(items) == 0 {
-		b.WriteString(theme.Dim.Render("  No projects found."))
+		b.WriteString(m.theme.Dim.Render("  No projects found."))
 		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
 	if m.status != "" {
-		b.WriteString(theme.Dim.Render(m.status))
+		b.WriteString(m.theme.Dim.Render(m.status))
 		b.WriteString("\n")
 	}
 	totalPages := (len(items) + ps - 1) / ps
@@ -322,9 +329,9 @@ func (m Model) viewProjects() string {
 	b.WriteString(fmt.Sprintf(" %d projects • Page %d/%d", len(items), page+1, totalPages))
 	b.WriteString("\n")
 	if m.filtering {
-		b.WriteString(theme.Help.Render("enter: apply filter • esc: clear filter"))
+		b.WriteString(m.theme.Help.Render("enter: apply filter • esc: clear filter"))
 	} else {
-		b.WriteString(theme.Help.Render("j/k: navigate • enter/l: open • /: filter • q/esc: back"))
+		b.WriteString(m.theme.Help.Render("j/k: navigate • enter/l: open • /: filter • q/esc: back"))
 	}
 
 	return b.String()
@@ -336,19 +343,19 @@ func (m Model) viewSessions() string {
 	// Title varies by source.
 	switch m.sessionSource {
 	case "project":
-		b.WriteString(theme.Title.Render("clsm — Sessions"))
+		b.WriteString(m.theme.Title.Render("clsm — Sessions"))
 		b.WriteString("  ")
-		b.WriteString(theme.Breadcrumb.Render(shortenPath(m.selectedProject.Path)))
+		b.WriteString(m.theme.Breadcrumb.Render(shortenPath(m.selectedProject.Path)))
 	case "all":
-		b.WriteString(theme.Title.Render("clsm — All Sessions"))
+		b.WriteString(m.theme.Title.Render("clsm — All Sessions"))
 	case "search":
-		b.WriteString(theme.Title.Render("clsm — Search Results"))
+		b.WriteString(m.theme.Title.Render("clsm — Search Results"))
 		if m.searchTerm != "" {
 			b.WriteString("  ")
-			b.WriteString(theme.Breadcrumb.Render("\"" + m.searchTerm + "\""))
+			b.WriteString(m.theme.Breadcrumb.Render("\"" + m.searchTerm + "\""))
 		}
 	default:
-		b.WriteString(theme.Title.Render("clsm — Sessions"))
+		b.WriteString(m.theme.Title.Render("clsm — Sessions"))
 	}
 	b.WriteString("\n\n")
 
@@ -375,22 +382,22 @@ func (m Model) viewSessions() string {
 		title := displayTitle(s)
 
 		// Checkbox.
-		check := theme.Uncheck.String()
+		check := m.theme.Uncheck.String()
 		if m.selected[sessIdx] {
-			check = theme.Check.String()
+			check = m.theme.Check.String()
 		}
 
 		prefix := "  "
 		style := lipgloss.NewStyle()
 		if vi == cursor {
-			prefix = theme.Cursor.Render("> ")
-			style = theme.Cursor
+			prefix = m.theme.Cursor.Render("> ")
+			style = m.theme.Cursor
 		}
 		if m.selected[sessIdx] {
-			style = theme.Selected
+			style = m.theme.Selected
 		}
 
-		msgs := theme.Count.Render(fmt.Sprintf("[%d msgs]", s.MsgCount))
+		msgs := m.theme.Count.Render(fmt.Sprintf("[%d msgs]", s.MsgCount))
 		b.WriteString(fmt.Sprintf("%s%s %s %s\n", prefix, check, style.Render(title), msgs))
 
 		// Detail line.
@@ -404,17 +411,17 @@ func (m Model) viewSessions() string {
 		if s.GitBranch != "" {
 			detail += " • " + s.GitBranch
 		}
-		b.WriteString(fmt.Sprintf("      %s\n", theme.Dim.Render(detail)))
+		b.WriteString(fmt.Sprintf("      %s\n", m.theme.Dim.Render(detail)))
 
 		// Optional prompt line.
 		prompt := truncate(firstLine(s.FirstPrompt), m.width-8)
 		if prompt != "" {
-			b.WriteString(fmt.Sprintf("      %s\n", theme.Dim.Render(prompt)))
+			b.WriteString(fmt.Sprintf("      %s\n", m.theme.Dim.Render(prompt)))
 		}
 	}
 
 	if len(items) == 0 {
-		b.WriteString(theme.Dim.Render("  No sessions found."))
+		b.WriteString(m.theme.Dim.Render("  No sessions found."))
 		b.WriteString("\n")
 	}
 
@@ -433,11 +440,11 @@ func (m Model) viewSessions() string {
 	b.WriteString("\n")
 
 	if m.filtering {
-		b.WriteString(theme.Help.Render("enter: apply filter • esc: clear filter"))
+		b.WriteString(m.theme.Help.Render("enter: apply filter • esc: clear filter"))
 	} else if selectedCount > 0 {
-		b.WriteString(theme.Help.Render("j/k: navigate • space: select • a/A: all/none • d: delete • /: filter • q/esc: back"))
+		b.WriteString(m.theme.Help.Render("j/k: navigate • space: select • a/A: all/none • d: delete • /: filter • q/esc: back"))
 	} else {
-		b.WriteString(theme.Help.Render("j/k: navigate • space: select • r: rename • /: filter • q/esc: back"))
+		b.WriteString(m.theme.Help.Render("j/k: navigate • space: select • r: rename • /: filter • q/esc: back"))
 	}
 
 	return b.String()
@@ -445,42 +452,42 @@ func (m Model) viewSessions() string {
 
 func (m Model) viewSearchInput() string {
 	var b strings.Builder
-	b.WriteString(theme.Title.Render("clsm — Search Sessions"))
+	b.WriteString(m.theme.Title.Render("clsm — Search Sessions"))
 	b.WriteString("\n\n")
 	b.WriteString("Search for sessions:\n\n")
 	b.WriteString(m.searchInput.View())
 	b.WriteString("\n\n")
 	if m.status != "" {
-		b.WriteString(theme.Dim.Render(m.status))
+		b.WriteString(m.theme.Dim.Render(m.status))
 		b.WriteString("\n\n")
 	}
-	b.WriteString(theme.Help.Render("enter: search • esc/q: back"))
+	b.WriteString(m.theme.Help.Render("enter: search • esc/q: back"))
 	return b.String()
 }
 
 func (m Model) viewRename() string {
 	var b strings.Builder
-	b.WriteString(theme.Title.Render("clsm — Rename Session"))
+	b.WriteString(m.theme.Title.Render("clsm — Rename Session"))
 	b.WriteString("\n\n")
 
 	s := m.sessions[m.renameIdx].session
 	current := displayTitle(s)
-	b.WriteString(fmt.Sprintf("Current: %s\n\n", theme.Dim.Render(current)))
+	b.WriteString(fmt.Sprintf("Current: %s\n\n", m.theme.Dim.Render(current)))
 	b.WriteString("New title:\n\n")
 	b.WriteString(m.renameInput.View())
 	b.WriteString("\n\n")
 	if m.status != "" {
-		b.WriteString(theme.Dim.Render(m.status))
+		b.WriteString(m.theme.Dim.Render(m.status))
 		b.WriteString("\n\n")
 	}
-	b.WriteString(theme.Help.Render("enter: save • esc: cancel"))
+	b.WriteString(m.theme.Help.Render("enter: save • esc: cancel"))
 	return b.String()
 }
 
 func (m Model) viewConfirmDelete() string {
 	selected := m.selectedSessions()
 	var b strings.Builder
-	b.WriteString(theme.Title.Render("Confirm Deletion"))
+	b.WriteString(m.theme.Title.Render("Confirm Deletion"))
 	b.WriteString("\n\n")
 	b.WriteString(fmt.Sprintf("Delete %d session(s)?\n\n", len(selected)))
 
@@ -490,22 +497,22 @@ func (m Model) viewConfirmDelete() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(theme.Help.Render("y: confirm • n/esc: cancel"))
+	b.WriteString(m.theme.Help.Render("y: confirm • n/esc: cancel"))
 	return b.String()
 }
 
 func (m Model) viewDeleteResults() string {
 	var b strings.Builder
-	b.WriteString(theme.Title.Render("Delete Results"))
+	b.WriteString(m.theme.Title.Render("Delete Results"))
 	b.WriteString("\n\n")
 
 	var succeeded, failed int
 	for _, r := range m.deleteResults {
 		if r.Success {
-			b.WriteString(theme.Success.Render(fmt.Sprintf("  ✓ Deleted %s", r.SessionID)))
+			b.WriteString(m.theme.Success.Render(fmt.Sprintf("  ✓ Deleted %s", r.SessionID)))
 			succeeded++
 		} else {
-			b.WriteString(theme.Error.Render(fmt.Sprintf("  ✗ Failed %s: %s", r.SessionID, r.Error)))
+			b.WriteString(m.theme.Error.Render(fmt.Sprintf("  ✗ Failed %s: %s", r.SessionID, r.Error)))
 			failed++
 		}
 		b.WriteString("\n")
@@ -520,19 +527,19 @@ func (m Model) viewDeleteResults() string {
 	case "search":
 		backLabel = "back to search"
 	}
-	b.WriteString(theme.Help.Render("enter: back to sessions • q/esc: " + backLabel))
+	b.WriteString(m.theme.Help.Render("enter: back to sessions • q/esc: " + backLabel))
 	return b.String()
 }
 
 func (m Model) viewPrunePreview() string {
 	var b strings.Builder
-	b.WriteString(theme.Title.Render("clsm — Prune Empty Sessions"))
+	b.WriteString(m.theme.Title.Render("clsm — Prune Empty Sessions"))
 	b.WriteString("\n\n")
 
 	if len(m.pruneSessions) == 0 {
-		b.WriteString(theme.Dim.Render("No empty sessions found."))
+		b.WriteString(m.theme.Dim.Render("No empty sessions found."))
 		b.WriteString("\n\n")
-		b.WriteString(theme.Help.Render("enter/esc: back to menu"))
+		b.WriteString(m.theme.Help.Render("enter/esc: back to menu"))
 		return b.String()
 	}
 
@@ -562,17 +569,17 @@ func (m Model) viewPrunePreview() string {
 	}
 
 	if remaining > 0 {
-		b.WriteString(theme.Dim.Render(fmt.Sprintf("  ... and %d more\n", remaining)))
+		b.WriteString(m.theme.Dim.Render(fmt.Sprintf("  ... and %d more\n", remaining)))
 	}
 
 	b.WriteString("\n")
-	b.WriteString(theme.Help.Render("y: confirm • esc: cancel"))
+	b.WriteString(m.theme.Help.Render("y: confirm • esc: cancel"))
 	return b.String()
 }
 
 func (m Model) viewPruneResults() string {
 	var b strings.Builder
-	b.WriteString(theme.Title.Render("Prune Results"))
+	b.WriteString(m.theme.Title.Render("Prune Results"))
 	b.WriteString("\n\n")
 
 	// title(1) + blank(1) + items... + blank(1) + summary(1) + blank(1) + help(1) = 6 overhead
@@ -594,21 +601,21 @@ func (m Model) viewPruneResults() string {
 		}
 		if i < maxVisible {
 			if r.Success {
-				b.WriteString(theme.Success.Render(fmt.Sprintf("  ✓ Deleted %s", r.SessionID)))
+				b.WriteString(m.theme.Success.Render(fmt.Sprintf("  ✓ Deleted %s", r.SessionID)))
 			} else {
-				b.WriteString(theme.Error.Render(fmt.Sprintf("  ✗ Failed %s: %s", r.SessionID, r.Error)))
+				b.WriteString(m.theme.Error.Render(fmt.Sprintf("  ✗ Failed %s: %s", r.SessionID, r.Error)))
 			}
 			b.WriteString("\n")
 		}
 	}
 
 	if remaining > 0 {
-		b.WriteString(theme.Dim.Render(fmt.Sprintf("  ... and %d more\n", remaining)))
+		b.WriteString(m.theme.Dim.Render(fmt.Sprintf("  ... and %d more\n", remaining)))
 	}
 
 	b.WriteString("\n")
 	b.WriteString(fmt.Sprintf("  %d succeeded, %d failed\n\n", succeeded, failed))
-	b.WriteString(theme.Help.Render("enter/esc: back to menu"))
+	b.WriteString(m.theme.Help.Render("enter/esc: back to menu"))
 	return b.String()
 }
 

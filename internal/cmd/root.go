@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 
 	"github.com/baz-sh/clsm/internal/tui/browse"
@@ -33,7 +33,7 @@ func init() {
 func runHome() error {
 	for {
 		m := home.New()
-		p := tea.NewProgram(m, tea.WithAltScreen())
+		p := tea.NewProgram(m)
 		result, err := p.Run()
 		if err != nil {
 			return err
@@ -74,7 +74,7 @@ type backToHomer interface {
 // runAndCheckBack runs a TUI in alt-screen and returns true if the user
 // wants to go back to the home menu, false if they want to quit entirely.
 func runAndCheckBack(model backToHomer) bool {
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	p := tea.NewProgram(model)
 	result, err := p.Run()
 	if err != nil {
 		return false

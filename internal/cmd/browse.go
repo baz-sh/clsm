@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 
 	"github.com/baz-sh/clsm/internal/tui/browse"
@@ -15,7 +15,7 @@ var browseCmd = &cobra.Command{
 Navigate the project list, drill into a project to see its sessions,
 and filter results with /.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		p := tea.NewProgram(browse.New(browse.ModeProjects), tea.WithAltScreen())
+		p := tea.NewProgram(browse.New(browse.ModeProjects))
 		_, err := p.Run()
 		return err
 	},
